@@ -1,0 +1,1 @@
+""" Maximum Likelihood (Individual Compatibility) association """

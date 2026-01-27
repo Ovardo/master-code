@@ -1,0 +1,5 @@
+{
+    "python.defaultInterpreterPath": "python",
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.terminal.executeInFileDir": false
+}

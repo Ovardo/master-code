@@ -1,68 +1,67 @@
 import gtsam
 import numpy as np
 import matplotlib.pyplot as plt
-import gtsam.utils.plot as gtsam_plot
-from gtbook.display import show
 from gtsam.symbol_shorthand import X, L
 from ekf_slam import EKFSLAM
-from utils.utils_math import kstr, pose2_to_array, rotmat2
-from simulation.data_generator_nonlinear import RobotSimulatorSE2, build_nonlinear_factor_graph, compute_error
-from div.tuning import NonlinearSimParams, NonlinearFactorGraphParams
+from utils.utils_gtsam import kstr
+from simulation.create_measurements import RobotSimulatorSE2, build_nonlinear_factor_graph
 from utils.utils_plot import plot_result, plot_ellipse, plot_se2_covariance_on_manifold_gtsam, MultivariateNormalParameters
-
+from config import Config
 
 
 def nonlinear_batch_slam_example_with_and_without_landamrks():
     
-    simParams = NonlinearSimParams(
-        poses=[
+    gt_data = {
+        'poses' : [
             np.array([0.0, 0.0, 0.0]),  # X0
             np.array([2.0, 0.0, 0.0]),  # X1
             np.array([4.0, 0.0, 0.0])   # X2
         ],
-        landmarks=[
+        'landmarks': [
             np.array([2.0, 2.0]),  # L0
             np.array([4.0, 2.0]),  # L1
         ],
-        observations={ # could potentially use max distance to determine this
+        'observations': { # could potentially use max distance to determine this
             0: [0],     # X0 sees L0
             1: [0],     # X1 sees L0
             2: [1]      # X2 sees L1
-        },
-        Q_vec = np.array([0.03, 0.05, 0.05]),  # Process noise (x, y, theta)
-        R_vec = np.array([0.01, 0.05]),       # Measurement (bearing, range)
-        P_x0_vec = np.array([0.0, 0.0, 0.0]), # Prior noise
+        }
+    }
 
-        odom_seed=42,
-        meas_seed=42,
-    )
-
-    simulator = RobotSimulatorSE2(simParams)
+    conf = Config()
+    conf.sim_noise.Q_vec = np.array([0.03, 0.05, 0.05])  # Process noise (x, y, theta)
+    conf.sim_noise.R_vec = np.array([0.01, 0.05])        # Measurement (bearing, range)
+    conf.sim_noise.P0_vec = np.array([0.0, 0.0, 0.0])    # Prior noise
+    conf.sim_noise.odom_seed=42
+    conf.sim_noise.meas_seed=42
+    
+    simulator = RobotSimulatorSE2(gt_data, conf)
     sim_data = simulator.simulate()
 
-    pose_vars = [X(i) for i in range(len(sim_data['ground_truth']['poses']))]
-    landmark_vars = [L(i) for i in range(len(sim_data['ground_truth']['landmarks']))]
+    pose_vars = [X(i) for i in range(len(gt_data['poses']))]
+    landmark_vars = [L(i) for i in range(len(gt_data['landmarks']))]
     all_vars = pose_vars + landmark_vars
 
-    poses_gt = sim_data['ground_truth']['poses']
-    landmarks_gt = sim_data['ground_truth']['landmarks']
+    poses_gt = gt_data['poses']
+    landmarks_gt = gt_data['landmarks']
     num_landmarks = len(landmarks_gt)
 
-    odometry_meas = sim_data['measurements']['odometry']
-    landmark_meas = sim_data['measurements']['landmarks']   # dict: pose_idx -> list[(range, Rot2)]
-    associations = sim_data['associations']                 # dict: pose_idx -> list[landmark_idx]
+    odometry_meas = sim_data['odometry']
+    landmark_meas = sim_data['landmarks']   # dict: pose_idx -> list[(range, Rot2)]
+    associations = gt_data['observations']  # dict: pose_idx -> list[landmark_idx]
 
     # Inference parameters (std)
     Q_vec = np.array([0.05, 0.1, 0.2])
     R_vec = np.array([0.02, 0.1]) # (Bearing, range) GTSAM ordering
-    P_x0_vec = np.array([0.2, 0.2, 0.1])
+    P0_vec = np.array([0.2, 0.2, 0.1])
     
     # ------------------------------------------------------------------
     # EKF SLAM
     # ------------------------------------------------------------------
-    Px_0 = np.diag(P_x0_vec**2)               # 3x3
+    Px_0 = np.diag(P0_vec**2)               # 3x3
 
     # Initial pose from ground truth (or use prior mean from sim_data['measurements']['prior'])
+    poses_gt = [gtsam.Pose2(*pose) for pose in poses_gt]
     p0 = poses_gt[0]
     x0 = np.array([p0.x(), p0.y(), p0.theta()])
 
@@ -181,17 +180,14 @@ def nonlinear_batch_slam_example_with_and_without_landamrks():
     # --------------------------------------------------
     # FACTOR GRAPH SLAM
     # --------------------------------------------------
-
-    fgParams = NonlinearFactorGraphParams(
-        Q_vec = Q_vec,
-        R_vec = R_vec,
-        P_x0_vec = P_x0_vec
-    )
+    conf.inf_noise.Q_vec = Q_vec
+    conf.inf_noise.R_vec = R_vec
+    conf.inf_noise.P0_vec = P0_vec
 
     exact_map = True
 
     # GTSAM with landmakrs
-    nfg, initial_estimate = build_nonlinear_factor_graph(sim_data, fgParams)
+    nfg, initial_estimate = build_nonlinear_factor_graph(sim_data, gt_data, conf)
 
     params = gtsam.LevenbergMarquardtParams()
     optimizer = gtsam.LevenbergMarquardtOptimizer(nfg, initial_estimate, params)
@@ -253,8 +249,8 @@ def nonlinear_batch_slam_example_with_and_without_landamrks():
     x_lim, y_lim = ax.get_xlim(), ax.get_ylim()
 
     # GTSAM without landmarks (dead reckoning)
-    fgParams.dead_reckoning = True
-    nfg2, initial_estimate2 = build_nonlinear_factor_graph(sim_data, fgParams)
+    conf.inf.dead_reckoning = True
+    nfg2, initial_estimate2 = build_nonlinear_factor_graph(sim_data, gt_data, conf)
 
     optimizer2 = gtsam.LevenbergMarquardtOptimizer(nfg2, initial_estimate2, params)
     result2 = optimizer2.optimize()

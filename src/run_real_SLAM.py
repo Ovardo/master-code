@@ -37,7 +37,6 @@ def main():
     Kgps = timeGps.size
 
     # %% Parameters
-
     L = 2.83  # axel distance
     H = 0.76  # center to wheel encoder
     a = 0.95  # laser distance in front of first axel
@@ -48,16 +47,10 @@ def main():
     #sigmas = np.array([0.0001, 0.001, 0.1 * np.pi / 180])  # TODO tune
     # CorrCoeff = np.array([[1, 0, 0], [0, 1, 0.9], [0, 0.9, 1]])
     #Q = np.diag(sigmas) @ CorrCoeff @ np.diag(sigmas) 
-    Q = np.diag([0.1, 0.1, 0.5 * np.pi / 180]) ** 2  # (x, y, theta)
-    R = np.diag([2 * np.pi / 180,  0.05]) ** 2  # (bearing, range)
 
-    alpha_individual = 0.999
-    alpha_joint = 0.99999
-
-    sensorOffset = np.array([car.a + car.L, car.b])
+    # sensorOffset = np.array([car.a + car.L, car.b])
 
     x0 = np.array([Lo_m[0], La_m[0], 36 * np.pi / 180])
-    P_x0 = np.array([0.05,0.05,np.deg2rad(0.5)]) 
 
     mk_first = 1  # first seems to be a bit off in timing
     mk = mk_first
@@ -65,27 +58,18 @@ def main():
 
     # %% Initialize SLAM
     from factor_graph_slam import FactorGraphSLAM, SLAMVisualizer
-    from div.tuning import NonlinearFactorGraphParams
+    from config import load_config
 
-    
-    fgParams = NonlinearFactorGraphParams(
-        Q_vec=np.sqrt(np.diag(Q)),
-        R_vec=np.sqrt(np.diag(R)),
-        P_x0_vec=P_x0,
-        association_type="jcbb",
-        alpha_individual=alpha_individual,
-        alpha_joint=alpha_joint,
-        r_local=90.0, # Victoria park max range is around 80m
-        use_isam=True,
-    )
+    config_path = Path(__file__).parents[0].joinpath("conf/victoria_park_config.yaml")
+    cfg = load_config(config_path)
 
-    slam = FactorGraphSLAM(fgParams, gtsam.Pose2(*x0))
+    slam = FactorGraphSLAM(cfg.inference, gtsam.Pose2(*x0))
     slam.current_step = 1 # quick fix as we do nt assume measurement at step 0
 
     Delta = gtsam.Pose2()  # accumulated odometry between laser measurements
 
     # %% Run SLAM (dead reckoning for odometry only)
-    N = 1000
+    N = 2000
 
     poses_dead_reckoning = []
     x_prev = gtsam.Pose2(*x0)
@@ -143,7 +127,6 @@ def main():
             #slam.process_step(gtsam.Pose2(*odo), [])
 
     
-    
     # %% Visualize final result
     marginals = slam.get_marginals()
     fig, ax = SLAMVisualizer.plot_final_result(slam, marginals, poses_dead_reckoning=poses_dead_reckoning, ax=ax)
@@ -167,9 +150,7 @@ def main():
     # SLAMVisualizer.plot_measurement_space_step_by_step(slam)
     # plt.show()
 
-# %%
-
-    # %% 
+ 
 
 if __name__ == "__main__":
     main()

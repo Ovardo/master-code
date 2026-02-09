@@ -95,8 +95,8 @@ def make_figure8_data(
 
 
 if __name__ == "__main__":
-    poses, landmarks, observations = make_circle_data(radius=7.5, n_poses=20, n_landmarks=20, max_range=7.5)
-    #poses, landmarks, observations = make_figure8_data()
+    #poses, landmarks, observations = make_circle_data(radius=7.5, n_poses=20, n_landmarks=20, max_range=7.5)
+    poses, landmarks, observations = make_figure8_data(a=10, n_poses=30, n_landmarks=25, max_range=7.5)
     import matplotlib.pyplot as plt
 
     # Convert poses and landmarks to arrays
@@ -140,6 +140,6 @@ if __name__ == "__main__":
     ax.legend()
     ax.grid(True)
     plt.show()
-    out_path = os.path.join(os.path.dirname(__file__), "data_circle_zoomed.pdf")
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    print(f"Saved plot to {out_path}")
+    # out_path = os.path.join(os.path.dirname(__file__), "data_circle_zoomed.pdf")
+    # fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    # print(f"Saved plot to {out_path}")

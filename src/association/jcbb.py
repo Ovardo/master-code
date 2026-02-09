@@ -9,7 +9,6 @@ from utils import utils_math
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
 
-
 def JCBB(z, zbar, S, alpha_individual, alpha_joint):
     #assert len(z.shape) == 1, "z must be in one row in JCBB"
     #assert z.shape[0] % 2 == 0, "z must be equal in x and y"

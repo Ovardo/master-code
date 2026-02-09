@@ -6,6 +6,7 @@ from scipy.stats import chi2
 
 import gtsam
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import Dict, List, Optional, Tuple, Any
 from association.jcbb import JCBB, NIS
@@ -14,7 +15,7 @@ from models.measurementmodels import RangeBearing
 from utils.utils_gtsam import pose2_to_array, reorder_covariance_auto
 from utils.utils_math import rotmat2, ssa, make_psd
 from gtsam.symbol_shorthand import X, L
-from div.tuning import NonlinearFactorGraphParams
+from config import InferenceConfig
 
 from utils.utils_plot import plot_ellipse, plot_se2_covariance_on_manifold_gtsam, plot_pose2_on_axes, MultivariateNormalParameters
 
@@ -22,8 +23,13 @@ from utils.utils_plot import plot_ellipse, plot_se2_covariance_on_manifold_gtsam
 class FactorGraphSLAM:
     """Main SLAM estimator using factor graphs"""
     
-    def __init__(self, config: NonlinearFactorGraphParams, prior_pose: gtsam.Pose2, gt_associations: Optional[Dict[int, List[int]]] = None):
-        self.config = config
+    def __init__(self, 
+                 cfg: InferenceConfig,
+                 prior_pose: gtsam.Pose2, 
+                 gt_associations: Optional[Dict[int, List[int]]] = None):
+        
+        self.cfg = cfg
+       
         self.graph = gtsam.NonlinearFactorGraph()
         self.values = gtsam.Values()
        
@@ -37,20 +43,20 @@ class FactorGraphSLAM:
         
         # Models
         self.motion_model = OdometrySE2(
-            sigma_x=config.sigma_x,
-            sigma_y=config.sigma_y,
-            sigma_theta=config.sigma_theta
+            sigma_x=cfg.noise.x_std,
+            sigma_y=cfg.noise.y_std,
+            sigma_theta=cfg.noise.theta_std_rad
         )
         self.sensor_model = RangeBearing(
-            sigma_range=config.sigma_range,
-            sigma_bearing=config.sigma_bearing
+            sigma_range=cfg.noise.range_std,
+            sigma_bearing=cfg.noise.bearing_std_rad
         )
         
         # Noise models
-        self.prior_noise = gtsam.noiseModel.Diagonal.Sigmas(config.P_x0_vec)
-        self.odometry_noise = gtsam.noiseModel.Diagonal.Sigmas(config.Q_vec)
-        self.measurement_noise = gtsam.noiseModel.Diagonal.Sigmas(config.R_vec)
-        self.measurement_noise_birth = gtsam.noiseModel.Diagonal.Sigmas(config.R_vec * 1.0)  # higher uncertainty for new landmarks
+        self.prior_noise = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.initial_vec)
+        self.odometry_noise = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.odometry_vec)
+        self.measurement_noise = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.measurement_vec)
+        self.measurement_noise_birth = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.measurement_vec * 1.0)  # higher uncertainty for new landmarks
         
         # State tracking
         self.landmark_keys = set()  # Track observed landmarks
@@ -74,7 +80,6 @@ class FactorGraphSLAM:
         
         self.optimize_graph()
         
-        
         self.history.add_estimate(self.current_step, self.values)
     
     def local_feature_filtering(self, odometry: gtsam.Pose2):
@@ -84,7 +89,7 @@ class FactorGraphSLAM:
         for i, key_i in enumerate(self.landmark_keys):
             m_i = self.values.atPoint2(key_i)
             range_pred = pose_pred.range(m_i)
-            if range_pred < self.config.r_local:
+            if range_pred < self.cfg.local_filtering_range:
                 local_landmarks_keys.append(key_i)  
         return local_landmarks_keys, pose_pred
 
@@ -140,7 +145,8 @@ class FactorGraphSLAM:
             H_mi = self.sensor_model.H_m(pose2_to_array(pose_pred), m_i)
             H[2*i:2*i+2, 0:3] = H_x
             H[2*i:2*i+2, 3+2*i:3+2*i+2] = H_mi
-            R[2*i:2*i+2, 2*i:2*i+2] = np.diag([self.config.sigma_range**2, self.config.sigma_bearing**2])
+            R[2*i:2*i+2, 2*i:2*i+2] = np.diag(self.cfg.noise.measurement_vec**2)
+
         
         S = H @ Sigma_pred_W @ H.T + R
         S = make_psd(S) # TODO: ensure this isnt messing up results
@@ -152,8 +158,8 @@ class FactorGraphSLAM:
         """Placeholder for JCBB data association logic"""
         # For now, return dummy associations (all -1)
 
-        alpha_ind = self.config.alpha_individual
-        alpha_jnt = self.config.alpha_joint
+        alpha_ind = self.cfg.alpha_individual
+        alpha_jnt = self.cfg.alpha_joint
 
         z = np.zeros((len(measurements), 2)) 
         for j, z_j in enumerate(measurements): # turn List[(float, Rot2)] into (Mx2) np array 
@@ -175,7 +181,7 @@ class FactorGraphSLAM:
         local_landmarks_keys = []
         S_k = None
 
-        if self.config.association_type == "jcbb":
+        if self.cfg.association_type == "jcbb":
             if self.current_step == 0:
                 ass_global = [-1] * len(z_range_bearing)
                 ass_local = [-1] * len(z_range_bearing)
@@ -188,7 +194,7 @@ class FactorGraphSLAM:
                 S_k, local_predicted_measurements = self.innovation_covariance_computation(local_landmarks_keys, pose_pred, Sigma_pred_W)
                 ass_global, ass_local = self.compute_association(z_range_bearing, local_predicted_measurements, S_k, local_landmark_ids)
 
-        elif self.config.association_type == "known":
+        elif self.conf.inf.association_type == "ground_truth":
             ass_global = self.gt_associations[self.current_step]
             ass_local = ass_global
 
@@ -206,7 +212,7 @@ class FactorGraphSLAM:
         rec.associations = list(ass_global) 
         rec.associations_local = list(ass_local) 
         rec.innovation_covariance = S_k
-        rec.cov_last_pose = self.isam.marginalCovariance(X(self.current_step)) if self.config.use_isam else gtsam.Marginals(self.graph, self.values).marginalCovariance(X(self.current_step)) 
+        rec.cov_last_pose = self.isam.marginalCovariance(X(self.current_step)) if self.cfg.algorithm == "isam2" else gtsam.Marginals(self.graph, self.values).marginalCovariance(X(self.current_step)) 
 
         # mapping predicted index i -> landmark id
         rec.local_landmark_ids = [gtsam.symbolIndex(key) for key in local_landmarks_keys]
@@ -240,26 +246,28 @@ class FactorGraphSLAM:
         
         # Add range-bearing factors and initialize landmarks
         if landmark_measurements:
-            if self.config.association_type == "jcbb":
+            if self.cfg.association_type == "jcbb":
                 self._add_landmark_measurements_jcbb(landmark_measurements, associations)
-            elif self.config.association_type == "known":
+            elif self.cfg.association_type == "ground_truth":
                 self._add_landmark_measurements(landmark_measurements, associations)
             else:
-                raise ValueError(f"Unknown association type: {self.config.association_type}")
+                raise ValueError(f"Unknown association type: {self.cfg.association_type}")
 
     def optimize_graph(self) -> gtsam.Values:
         """Run optimization on the current factor graph"""
-        if self.config.use_isam:
+        if self.cfg.algorithm == "isam2":
             self.isam.update(self.new_factors, self.new_values)
             self.new_factors = gtsam.NonlinearFactorGraph()
             self.new_values = gtsam.Values()
             self.values = self.isam.calculateEstimate()
-            
-        else: # full batch optimization
+        elif self.cfg.algorithm == "batch": # full batch optimization
+            optParams = gtsam.LevenbergMarquardtParams()
             optimizer = gtsam.LevenbergMarquardtOptimizer(
-                self.graph, self.values, self.config.optimizer_params
+                self.graph, self.values, optParams
             )
             self.values = optimizer.optimize()
+        else:  
+            raise ValueError(f"Unknown algorithm: {self.cfg.algorithm}")
 
     
     def _add_odometry(self, odometry: gtsam.Pose2):
@@ -363,11 +371,6 @@ class FactorGraphSLAM:
     @property
     def num_poses(self) -> int:
         return self.current_step
-    
-    @property
-    def num_landmarks(self) -> int:
-        return len(self.landmark_keys)
-
 
 ####################################################################
 ####################################################################
@@ -593,7 +596,7 @@ class SLAMVisualizer:
 
             nis_sequence[k] = NIS(z, zhat, S, assoc)
 
-            lower, upper = chi2.interval(slam.config.alpha_joint, df=dof)
+            lower, upper = chi2.interval(slam.conf.inf.alpha_joint, df=dof)
             lower_bounds[k] = lower
             upper_bounds[k] = upper
 

@@ -7,7 +7,12 @@ import numpy as np
 import visgeom as vg
 from shapely import geometry as sg, ops as so
 import matplotlib.pyplot as plt
-import matplotlib
+
+
+@dataclass
+class MultivariateNormalParameters:
+    mean: Any
+    covariance: np.ndarray
 
 
 def plot_result(ax, poses, landmarks, poses_gt=None, gt_landmarks=None, sample_points=False, exact_map=True):
@@ -192,7 +197,3 @@ def plot_ellipse(ax, dist, n=50, chi2_val=5.991, fill_alpha=0., fill_color='ligh
     ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color, linewidth=linewidth, linestyle=linestyle)
 
 
-@dataclass
-class MultivariateNormalParameters:
-    mean: Any
-    covariance: np.ndarray

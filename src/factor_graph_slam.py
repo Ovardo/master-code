@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import copy
+from abc import ABC, abstractmethod
 from scipy.stats import chi2
 
 import gtsam
@@ -15,10 +16,20 @@ from models.measurementmodels import RangeBearing
 from utils.utils_gtsam import pose2_to_array, reorder_covariance_auto
 from utils.utils_math import rotmat2, ssa, make_psd
 from gtsam.symbol_shorthand import X, L
-from config import InferenceConfig
+from config import InferenceConfig, NoiseConfig
 
 from utils.utils_plot import plot_ellipse, plot_se2_covariance_on_manifold_gtsam, plot_pose2_on_axes, MultivariateNormalParameters
 
+
+
+class Estimator(ABC):
+    
+    @abstractmethod
+    def process_step(self, odometry, measurements) -> Any:
+        """Process one SLAM step given odometry and measurements. Returns current estimate."""
+        pass
+
+    
 
 class FactorGraphSLAM:
     """Main SLAM estimator using factor graphs"""
@@ -64,10 +75,16 @@ class FactorGraphSLAM:
         
         # Initialize with prior
         self._add_prior(prior_pose)
+
+        
     
     @property
     def num_landmarks(self) -> int:
         return len(self.landmark_keys)
+    
+    @property
+    def num_poses(self) -> int:
+        return self.current_step
         
     def _add_prior(self, prior_pose: gtsam.Pose2):
         """Add prior factor for initial pose"""
@@ -165,40 +182,66 @@ class FactorGraphSLAM:
         for j, z_j in enumerate(measurements): # turn List[(float, Rot2)] into (Mx2) np array 
             z[j] = np.array([z_j[0], z_j[1].theta()])
 
-        association_hyp_local = JCBB(z, predicted_measurements, S, alpha_ind, alpha_jnt)
+        if self.cfg.association_type == "jcbb":
+            association_hyp_local = JCBB(z, predicted_measurements, S, alpha_ind, alpha_jnt)
+        elif self.cfg.association_type == "maximum_likelihood":
+            from association.ml import maximum_likelihood
+            association_hyp_local = maximum_likelihood(z, predicted_measurements, S, alpha_ind)
 
         # Convert from local landmark indices to global landmark IDs
         i_to_id = {i: lm_id for i, lm_id in enumerate(local_landmarks_ids)}
-        association_hyp_global = [i_to_id[a_j] if a_j > -1 else -1 for a_j in association_hyp_local]
+        association_hyp_global = [i_to_id[a_j] if a_j > -1 else a_j for a_j in association_hyp_local]
    
         return association_hyp_global, association_hyp_local
 
 
-    def process_step(self, odometry, z_range_bearing):
+    def process_step(self, z_odometry: Tuple[float, float, float], z_range_bearing: List[Tuple[float, float]]):
+        """
+        Main SLAM step processing:
+
+        Args
+        - z_odometry: Tuple,v,psi) representing odometry measurement (relative motion)
+
+        """
+        # # Convert to gtsam objects
+        # odometry = gtsam.Pose2(*z_odometry)
+        # range_bearing = [(r, gtsam.Rot2(b)) for r, b in z_range_bearing]
         
+        
+        if len(z_range_bearing) == 0: # no measurements, just odometry
+            self.accumulated_odometry = self.accumulated_odometry.compose(z_odometry) 
+        else:
+            
+
+            # reset accumulated odometry when we have measurements to process
+            self.accumulated_odometry = gtsam.Pose2()  
+    
+
+
         local_predicted_measurements = np.empty((0,2))
         pose_pred = None
         local_landmarks_keys = []
         S_k = None
 
-        if self.cfg.association_type == "jcbb":
+        if self.cfg.association_type is not "ground_truth":
             if self.current_step == 0:
                 ass_global = [-1] * len(z_range_bearing)
                 ass_local = [-1] * len(z_range_bearing)
             else:
-                local_landmarks_keys, pose_pred = self.local_feature_filtering(odometry)
+                local_landmarks_keys, pose_pred = self.local_feature_filtering(z_odometry)
                 local_landmark_ids = [gtsam.symbolIndex(key) for key in local_landmarks_keys]
                 
                 Sigma_prev_W, _ = self.covariance_extraction(local_landmarks_keys)
-                Sigma_pred_W = self.covariance_propagation(Sigma_prev_W, pose_pred, odometry)
+                Sigma_pred_W = self.covariance_propagation(Sigma_prev_W, pose_pred, z_odometry)
                 S_k, local_predicted_measurements = self.innovation_covariance_computation(local_landmarks_keys, pose_pred, Sigma_pred_W)
                 ass_global, ass_local = self.compute_association(z_range_bearing, local_predicted_measurements, S_k, local_landmark_ids)
-
-        elif self.conf.inf.association_type == "ground_truth":
+        else: # ground truth
             ass_global = self.gt_associations[self.current_step]
             ass_local = ass_global
 
-        self.update_graph(odometry, z_range_bearing, ass_global)
+        print(ass_global)
+
+        self.update_graph(z_odometry, z_range_bearing, ass_global)
         self.optimize_graph()
         # self.new_factors = gtsam.NonlinearFactorGraph() # reset new factors
         # self.new_values = gtsam.Values() # reset new values
@@ -218,9 +261,10 @@ class FactorGraphSLAM:
         rec.local_landmark_ids = [gtsam.symbolIndex(key) for key in local_landmarks_keys]
 
         # optional extras for later:
-        rec.S = None if S_k is None else np.asarray(S_k, dtype=float)
+        # rec.S = None if S_k is None else np.asarray(S_k, dtype=float)
 
         self.current_step += 1
+        
         return self.values
 
     
@@ -246,12 +290,8 @@ class FactorGraphSLAM:
         
         # Add range-bearing factors and initialize landmarks
         if landmark_measurements:
-            if self.cfg.association_type == "jcbb":
-                self._add_landmark_measurements_jcbb(landmark_measurements, associations)
-            elif self.cfg.association_type == "ground_truth":
-                self._add_landmark_measurements(landmark_measurements, associations)
-            else:
-                raise ValueError(f"Unknown association type: {self.cfg.association_type}")
+            self._add_landmark_measurements(landmark_measurements, associations)
+          
 
     def optimize_graph(self) -> gtsam.Values:
         """Run optimization on the current factor graph"""
@@ -287,28 +327,9 @@ class FactorGraphSLAM:
         self.values.insert(X(to_idx), predicted_pose)
         self.new_values.insert(X(to_idx), predicted_pose)
     
-    def _add_landmark_measurements(self, 
-                                   measurements: List[Tuple[float, gtsam.Rot2]], 
-                                   landmark_ids: List[int]):
-        """Add landmark measurement factors"""
-        current_pose_key = X(self.current_step)
-        
-        for (z_range, z_bearing), lm_id in zip(measurements, landmark_ids):
-            lm_key = L(lm_id)
-            
-            # Add measurement factor
-            meas_factor = gtsam.BearingRangeFactor2D(
-                current_pose_key, lm_key, z_bearing, z_range, self.measurement_noise
-            )
-            self.graph.add(meas_factor)
-            self.new_factors.add(meas_factor)
-            
-            # Initialize landmark if first observation
-            if lm_key not in self.landmark_keys:
-                self._initialize_landmark(lm_key, current_pose_key, z_range, z_bearing)
-                self.landmark_keys.add(lm_key)
+
     
-    def _add_landmark_measurements_jcbb(self, 
+    def _add_landmark_measurements(self, 
                                    measurements: List[Tuple[float, gtsam.Rot2]], 
                                    associations: List[int]):
         """Add landmark measurement factors"""
@@ -316,8 +337,10 @@ class FactorGraphSLAM:
         
         # j is measurement index, a_j is associated landmark index
         for j, ((z_range, z_bearing), a_j) in enumerate(zip(measurements, associations)):
-            
-            if a_j > -1: # measurement j associated with previously observed landmark a_j
+
+            if a_j == -2: # ambiguous association, could be outlier or valid match. For now, treat as outlier (no factor)
+                continue
+            elif a_j > -1: # measurement j associated with previously observed landmark a_j
                 # Add measurement factor
                 meas_factor = gtsam.BearingRangeFactor2D(
                     current_pose_key, L(a_j), z_bearing, z_range, self.measurement_noise
@@ -326,7 +349,6 @@ class FactorGraphSLAM:
                 self.new_factors.add(meas_factor)
              
             else: # a_j = -1, i.e measurement j not associated with any landmark
-                # TODO; add logic for false alarms if needed
                 lm_key = L(self.num_landmarks)
                 self.landmark_keys.add(lm_key) # this updates num_landmarks property btw
                 measure_factor = gtsam.BearingRangeFactor2D(
@@ -368,9 +390,7 @@ class FactorGraphSLAM:
             for key in self.landmark_keys
         }
     
-    @property
-    def num_poses(self) -> int:
-        return self.current_step
+
 
 ####################################################################
 ####################################################################
@@ -558,7 +578,7 @@ class SLAMVisualizer:
         return fig, ax
 
     @staticmethod
-    def plot_NIS(slam, figsize=(13, 3), ax=None, show_expected=True):
+    def plot_NIS(slam: FactorGraphSLAM, figsize=(13, 3), ax=None, show_expected=True):
         import matplotlib.pyplot as plt
         
         steps = list(slam.history.steps)
@@ -596,7 +616,7 @@ class SLAMVisualizer:
 
             nis_sequence[k] = NIS(z, zhat, S, assoc)
 
-            lower, upper = chi2.interval(slam.conf.inf.alpha_joint, df=dof)
+            lower, upper = chi2.interval(slam.cfg.alpha_joint, df=dof)
             lower_bounds[k] = lower
             upper_bounds[k] = upper
 

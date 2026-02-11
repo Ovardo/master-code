@@ -124,7 +124,7 @@ class InferenceConfig:
     dead_reckoning: bool = False  # whether to use dead reckoning only (no landmark factors) # TODO: IDE hover support
     
     # Data association settings
-    association_type: str = "jcbb"  # "ground_truth", "jcbb" (TODO: todo "maximum_likelihood" "neareast_neighbour", "Constrained Nearnest Neighboor data association
+    association_type: str = "jcbb"  # "ground_truth", "jcbb", "maximum_likelihood", "neareast_neighbour", "Constrained Nearnest Neighboor data association
     alpha_individual: float = 0.999  # confidence levels for individual compatibility test
     alpha_joint: float = 0.9999  # confidence levels for joint compatibility test
 
@@ -133,10 +133,15 @@ class InferenceConfig:
 
     def __post_init__(self):
         """Validate inference parameters."""
-        if self.algorithm not in ["ekf", "isam2", "batch"]:
+        
+        algorithm_options = ["ekf", "isam2", "batch"]
+        if self.algorithm not in algorithm_options:
             raise ValueError(f"Invalid algorithm {self.algorithm}, must be one of 'ekf', 'isam2', 'batch'")
-        if self.association_type not in ["ground_truth", "jcbb"]:
-            raise ValueError(f"Invalid association_type {self.association_type}, must be 'ground_truth' or 'jcbb'")
+        
+        association_options = ["ground_truth", "jcbb", "maximum_likelihood"]
+        if self.association_type not in association_options:
+            raise ValueError(f"Invalid association_type {self.association_type}, must be one of {association_options}")
+       
         if not (0 < self.alpha_individual < 1):
             raise ValueError(f"alpha_individual must be in (0, 1), got {self.alpha_individual}")
         if not (0 < self.alpha_joint < 1):
@@ -240,7 +245,7 @@ class SLAMConfig:
         
 def load_config(config_path: str) -> SLAMConfig:
     """
-    Load configuration from a file YAML file.
+    Load configuration from a YAML file.
 
     Args:
         config_path (str): Path to the configuration file.
@@ -332,9 +337,4 @@ if __name__ == "__main__":
 
 
 
-
-
-# # To be imported, according to singelton pattern (not thread safe)
-# # TODO: make logic for logging whenever conf is modified as may be prone to hard to find bugs
-# conf = SLAMConfig()
 

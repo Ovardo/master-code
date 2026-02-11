@@ -2,63 +2,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import gtsam 
-from gtsam.utils import plot as gtsam_plot
 
-from scipy.io import loadmat
 from pathlib import Path
 
 from tqdm import tqdm
 
-from utils.utils_victoria_park import detectTrees, odometry, Car
+from data_loader import VictoriaParkLoader
+from utils.utils_victoria_park import Car
+from factor_graph_slam import FactorGraphSLAM, SLAMVisualizer
+from config import load_config
 
 def main():
-    # %% Load data
-    victoria_park_foler = Path(__file__).parents[1].joinpath("data/victoria_park")
-    realSLAM_ws = {
-        **loadmat(str(victoria_park_foler.joinpath("aa3_dr"))),
-        **loadmat(str(victoria_park_foler.joinpath("aa3_lsr2"))),
-        **loadmat(str(victoria_park_foler.joinpath("aa3_gpsx"))),
-    }
-
-    timeOdo = (realSLAM_ws["time"] / 1000).ravel()
-    timeLsr = (realSLAM_ws["TLsr"] / 1000).ravel()
-    timeGps = (realSLAM_ws["timeGps"] / 1000).ravel()
-
-    steering = realSLAM_ws["steering"].ravel()
-    speed = realSLAM_ws["speed"].ravel()
-    LASER = (
-        realSLAM_ws["LASER"] / 100
-    )  # Divide by 100 to be compatible with Python implementation of detectTrees
-    La_m = realSLAM_ws["La_m"].ravel()
-    Lo_m = realSLAM_ws["Lo_m"].ravel()
-
-    K = timeOdo.size
-    mK = timeLsr.size
-    Kgps = timeGps.size
-
-    # %% Parameters
-    L = 2.83  # axel distance
-    H = 0.76  # center to wheel encoder
-    a = 0.95  # laser distance in front of first axel
-    b = 0.5  # laser distance to the left of center
-
-    car = Car(L, H, a, b)
-
-    #sigmas = np.array([0.0001, 0.001, 0.1 * np.pi / 180])  # TODO tune
-    # CorrCoeff = np.array([[1, 0, 0], [0, 1, 0.9], [0, 0.9, 1]])
-    #Q = np.diag(sigmas) @ CorrCoeff @ np.diag(sigmas) 
 
     # sensorOffset = np.array([car.a + car.L, car.b])
 
-    x0 = np.array([Lo_m[0], La_m[0], 36 * np.pi / 180])
+    data_folder = Path(__file__).parents[1].joinpath("data/victoria_park")
+    data_loader = VictoriaParkLoader(data_folder=data_folder)
 
-    mk_first = 1  # first seems to be a bit off in timing
-    mk = mk_first
-    t = timeOdo[0]
+    x0 = np.array(data_loader.initial_position)
 
-    # %% Initialize SLAM
-    from factor_graph_slam import FactorGraphSLAM, SLAMVisualizer
-    from config import load_config
 
     config_path = Path(__file__).parents[0].joinpath("conf/victoria_park_config.yaml")
     cfg = load_config(config_path)
@@ -66,24 +28,19 @@ def main():
     slam = FactorGraphSLAM(cfg.inference, gtsam.Pose2(*x0))
     slam.current_step = 1 # quick fix as we do nt assume measurement at step 0
 
-    Delta = gtsam.Pose2()  # accumulated odometry between laser measurements
 
     # %% Run SLAM (dead reckoning for odometry only)
-    N = 2000
+    N = 1500
 
     poses_dead_reckoning = []
     x_prev = gtsam.Pose2(*x0)
     poses_dead_reckoning.append(x_prev)
     # Deac reckoning
-    for k in range(1, N): 
-        dt = timeOdo[k + 1] - t
-        t = timeOdo[k + 1]
-        odo = odometry(speed[k + 1], steering[k + 1], dt, car)
-        x_new = x_prev.compose(gtsam.Pose2(*odo))
-        x_prev = x_new
-        poses_dead_reckoning.append(x_new)
+    for data_k in data_loader.iterate_steps(max_steps=N): 
+        x_pred = x_prev.compose(gtsam.Pose2(*data_k.odometry))
+        poses_dead_reckoning.append(x_pred)
+        x_prev = x_pred
     
-
     fig, ax = plt.subplots(figsize=(13, 8))
     
     x_coords = [pose.x() for pose in poses_dead_reckoning]
@@ -92,40 +49,17 @@ def main():
     
         
     # %% Run SLAM
-    k_z = 0
-    for k in tqdm(range(1, N)):
+    odometry_integrated = gtsam.Pose2()  # integrated odometry since last SLAM update, reset after each SLAM update
+
+    for data_k in tqdm(data_loader.iterate_steps(max_steps=N), total=N-1, desc="SLAM"):
+
+        odometry_integrated = odometry_integrated.compose(gtsam.Pose2(*data_k.odometry)) 
         
-        if mk < mK - 1 and timeLsr[mk] <= timeOdo[k + 1]:
-            k_z += 1
-
-            dt = timeLsr[mk] - t
-            if dt < 0:  # avoid assertions as they can be optimized avay?
-                raise ValueError("negative time increment")
-
-            # ? reset time to this laser time for next post predict
-            t = timeLsr[mk]
-            
-            odo = odometry(speed[k + 1], steering[k + 1], dt, car)
-            Delta = Delta.compose(gtsam.Pose2(*odo)) 
-            
-            z = detectTrees(LASER[mk])
-            
-            meas = []
-            for z_j in z:
-                meas.append((z_j[0], gtsam.Rot2(z_j[1])))  # (range, bearing)
-
-            slam.process_step(Delta, meas)
-            Delta = gtsam.Pose2()  # reset odometry
-
-            mk += 1
-
-        if k < K - 1:
-            dt = timeOdo[k + 1] - t
-            t = timeOdo[k + 1]
-            odo = odometry(speed[k + 1], steering[k + 1], dt, car)
-            Delta = Delta.compose(gtsam.Pose2(*odo)) # TODO: scale odoemtry noise accordingly
-            #slam.process_step(gtsam.Pose2(*odo), [])
-
+        if data_k.has_laser:
+            meas_gtsam = [(r, gtsam.Rot2(b)) for r, b in data_k.measurements]
+            slam.process_step(odometry_integrated, meas_gtsam)
+            odometry_integrated = gtsam.Pose2() # reset accumulated odometry
+    
     
     # %% Visualize final result
     marginals = slam.get_marginals()
@@ -133,22 +67,12 @@ def main():
     fig.savefig("figures/jcbb_vp.pdf", bbox_inches="tight")
     plt.show()
     
-    # %%
-    # SLAMVisualizer.plot_measurement_space(slam, step=70)
-    # plt.show()
 
     # %%
     fig, ax = SLAMVisualizer.plot_NIS(slam)
     fig.savefig("figures/jcbb_vp_nis.pdf", bbox_inches="tight")
     plt.show()
 
-    # %%
-    # SLAMVisualizer.plot_step_by_step(slam)
-    # plt.show()
-
-    # # %%
-    # SLAMVisualizer.plot_measurement_space_step_by_step(slam)
-    # plt.show()
 
  
 

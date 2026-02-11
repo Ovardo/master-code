@@ -2,6 +2,7 @@
 # Shamelessly stolen from here: https://github.com/ramanans1/EKF-SLAM/blob/master/tree_extraction.py
 # Small modifications by Odin Aleksander Severinsen 
 
+from dataclasses import dataclass
 import numpy as np
 
 def detectTrees(scan):
@@ -212,12 +213,17 @@ def odometry(ve, alpha, dt, car):
     return odo
 
 
+@dataclass(frozen=True)
 class Car:
-    def __init__(self, L, H, a, b):
-        self.L = L
-        self.H = H
-        self.a = a
-        self.b = b
+    """
+    Car parameters for Victoria Park dataset. See data/victoria_park/info.txt 
+    for info and data/victoria_park/car.bmp for drawing 
+    """
+    L: float = 2.83 # acxel distance
+    H: float = 0.76 # center to wheel encoder
+    a: float = 0.95 # laser distance in front of first axel
+    b: float = 0.5 # laser distance to the left of center
+
 
 
 

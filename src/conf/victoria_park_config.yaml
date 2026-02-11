@@ -3,12 +3,14 @@ description: Example SLAM configuration for testing
 seed: 42
 
 simulation:
-  dt: 0.1
-  duration: 20.0
+  # dt: 0.1
+  # duration: 20.0
+
   init_pose:
   - 0.0
   - 0.0
   - 0.0
+
   noise:
     x_std: 0.1
     y_std: 0.1
@@ -18,19 +20,29 @@ simulation:
     x0_std: 0.05
     y0_std: 0.05
     theta0_std_deg: 3.0
-  path_type: circle
-  num_poses: 10
-  num_landmarks: 15
-  landmark_bounds:
-  - -50.0
-  - 50.0
-  - -50.0
-  - 50.0
+
+  # path_type: circle
+  # num_poses: 10
+
+  # num_landmarks: 15
+  # landmark_bounds:
+  # - -50.0
+  # - 50.0
+  # - -50.0
+  # - 50.0
+
   max_sensor_range: 15.0
   sensor_fov_deg: 360.0
 
 inference:
+
   algorithm: isam2
+
+  init_pose:
+  - 0.0
+  - 0.0
+  - 0.0
+
   noise:
     x_std: 0.1
     y_std: 0.1
@@ -40,15 +52,15 @@ inference:
     x0_std: 0.05
     y0_std: 0.05
     theta0_std_deg: 0.5
-  init_pose:
-  - 0.0
-  - 0.0
-  - 0.0
+
   dead_reckoning: false
-  association_type: jcbb
+
+  association_type: maximum_likelihood
   alpha_individual: 0.999
   alpha_joint: 0.99999
+
   local_filtering_range: 90.0
+
   sensor_offset:
   - 0.0
   - 0.0

@@ -1,6 +1,8 @@
-import numpy as np
 from dataclasses import dataclass
-from utils.utils_math import ssa, rotmat2
+
+import numpy as np
+
+from utils.utils_math import rotmat2, ssa
 
 
 @dataclass
@@ -109,7 +111,7 @@ class OdometrySE2:
 
         return Fu
 
-    def F(self, x, m, u):
+    def F(self, x: np.ndarray, m: np.ndarray, u: np.ndarray) -> np.ndarray:
         """Calculate the jacobian of f wrt. eta (x, m).
 
         Parameters

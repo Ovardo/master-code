@@ -38,7 +38,7 @@ inference:
 
   algorithm: isam2
 
-  init_pose:
+  prior_pose:
   - 0.0
   - 0.0
   - 0.0
@@ -46,7 +46,7 @@ inference:
   noise:
     x_std: 0.1
     y_std: 0.1
-    theta_std_deg: 0.5
+    theta_std_deg: 0.1
     bearing_std_deg: 2
     range_std: 0.05
     x0_std: 0.05
@@ -55,11 +55,12 @@ inference:
 
   dead_reckoning: false
 
-  association_type: maximum_likelihood
+  association_method: "jcbb" # "jcbb", "maximum_likelihood" 
   alpha_individual: 0.999
   alpha_joint: 0.99999
 
-  local_filtering_range: 90.0
+  range_gate: 90.0
+  fov_gate_deg: 360.0
 
   sensor_offset:
   - 0.0

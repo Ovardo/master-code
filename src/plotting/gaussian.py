@@ -1,20 +1,20 @@
-import numpy as np
+import matplotlib as mpl
 
 # cell at index 0: plot a 2D Gaussian (bell surface = PDF)
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # registers 3D projection
-import matplotlib.cm as cm
-import matplotlib as mpl
+import numpy as np
 
-mpl.rcParams.update({
-    "figure.figsize": (6.5, 4.5),   # width x height in inches
-    "font.size": 14,                 # base font size
-    "axes.labelsize": 13,
-    "axes.titlesize": 13,
-    "xtick.labelsize": 11,
-    "ytick.labelsize": 11,
-    "legend.fontsize": 11,
-})
+mpl.rcParams.update(
+    {
+        "figure.figsize": (6.5, 4.5),  # width x height in inches
+        "font.size": 14,  # base font size
+        "axes.labelsize": 13,
+        "axes.titlesize": 13,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+        "legend.fontsize": 11,
+    }
+)
 
 def multivariate_gaussian(pos, mu, Sigma):
     """Vectorized multivariate Gaussian PDF for pos shaped (..., 2)."""
@@ -22,13 +22,13 @@ def multivariate_gaussian(pos, mu, Sigma):
     inv = np.linalg.inv(Sigma)
     norm = 1.0 / (2 * np.pi * np.sqrt(det))
     diff = pos - mu
-    exponent = np.einsum('...i,ij,...j->...', diff, inv, diff)
+    exponent = np.einsum("...i,ij,...j->...", diff, inv, diff)
     return norm * np.exp(-0.5 * exponent)
+
 
 # parameters (change as desired)
 mu = np.array([0.0, 0.0])
-Sigma = np.array([[1, 0],
-                  [0, 1]])
+Sigma = np.array([[1, 0], [0, 1]])
 
 # grid
 lim = 3.0
@@ -41,16 +41,16 @@ pos = np.dstack((X, Y))
 # pdf values
 Z = multivariate_gaussian(pos, mu, Sigma)
 
-import matplotlib as mpl
-mpl.rcParams['pdf.fonttype'] = 42   # keep TrueType fonts
-mpl.rcParams['ps.fonttype']  = 42
-mpl.rcParams['svg.fonttype'] = 'none'  # keep text as text in SVG
+
+mpl.rcParams["pdf.fonttype"] = 42  # keep TrueType fonts
+mpl.rcParams["ps.fonttype"] = 42
+mpl.rcParams["svg.fonttype"] = "none"  # keep text as text in SVG
 
 # plot
 fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
+ax = fig.add_subplot(111, projection="3d")
 
-ax.contourf(X, Y, Z, zdir='z', offset=0, cmap='gray_r', levels=5, alpha=1.0)
+ax.contourf(X, Y, Z, zdir="z", offset=0, cmap="gray_r", levels=5, alpha=1.0)
 
 # Mahalanobis radii (k-sigma) → PDF levels (strictly increasing after sort)
 k_sigma = np.array([1, 2, 3])
@@ -106,9 +106,19 @@ band_colors = ["#d6d6d6", "#919191", "#444444"]  # 3 bands
 #             bbox=dict(boxstyle='round,pad=0.2', fc='lightgray', ec='none', alpha=1.0))
 
 
-
-
-surf = ax.plot_surface(X, Y, Z, color='white', edgecolor='black', linewidth=0.3, antialiased=True, shade=False, rcount=30, ccount=30, alpha=0.7)
+surf = ax.plot_surface(
+    X,
+    Y,
+    Z,
+    color="white",
+    edgecolor="black",
+    linewidth=0.3,
+    antialiased=True,
+    shade=False,
+    rcount=30,
+    ccount=30,
+    alpha=0.7,
+)
 
 
 # remove gridlines and make 3D axes panes transparent
@@ -119,14 +129,14 @@ ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
 ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
 
 
-ax.set_xlabel(r'$x$', fontsize=12)
-ax.set_ylabel(r'$y$', fontsize=12)
-ax.set_zlabel(r'$P(x,y)$', fontsize=12)
+ax.set_xlabel(r"$x$", fontsize=12)
+ax.set_ylabel(r"$y$", fontsize=12)
+ax.set_zlabel(r"$P(x,y)$", fontsize=12)
 ax.set_zlim(0, Z.max() * 1.05)
 ax.view_init(elev=27.290806086083744, azim=-52.22792277075064, roll=1.742012537233759)
 
-#ax.set_title('2D Gaussian PDF (bell surface)')
-#fig.colorbar(surf, shrink=0.6, aspect=10, label='pdf value')
+# ax.set_title('2D Gaussian PDF (bell surface)')
+# fig.colorbar(surf, shrink=0.6, aspect=10, label='pdf value')
 
 plt.tight_layout()
 plt.show()
@@ -135,9 +145,5 @@ plt.show()
 # print('ax.elev {}'.format(ax.elev))
 # print('ax.roll {}'.format(ax.roll))
 
-#fig.savefig("figures/gaussian_standard.pdf", transparent=True)   # vector PDF
-#fig.savefig("figures/gaussian_standard.svg", transparent=True)   # vector SVG
-
-
-
-
+# fig.savefig("figures/gaussian_standard.pdf", transparent=True)   # vector PDF
+# fig.savefig("figures/gaussian_standard.svg", transparent=True)   # vector SVG

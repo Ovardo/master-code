@@ -1,13 +1,15 @@
 """
 Code for converting yaml configuration files into structured dataclasses utlizing OmegaConf.
-Convenient for type checking, data validation, and IDE support
-"""
-import numpy as np
-import warnings
 
+Convenient for type checking, data validation, and IDE support.
+"""
+import warnings
 from dataclasses import dataclass, field
-from typing import Optional, Tuple 
 from pathlib import Path
+from typing import Optional
+
+import numpy as np
+from omegaconf import OmegaConf
 
 
 @dataclass
@@ -18,32 +20,32 @@ class NoiseConfig:
     x_std: float = 0.1 # meters
     y_std: float = 0.1 # meters
     theta_std_deg: float = 0.1 # degrees
-    
+
     # Measurement noise 
     bearing_std_deg: float = 1.0  # degrees
     range_std: float = 0.2 # meters
-    
+
     # Initial state uncertainty
     x0_std: float = 0.05 # meters
     y0_std: float = 0.05 # meters
     theta0_std_deg: float = 3.0  # degrees
 
     def __post___init__(self):
-        """Validate noise parameters"""
+        """Validate noise parameters."""
         for field_name, value in self.__dict__.items():
             if value <= 0:
                 raise ValueError(f"Noise parameter {field_name} must be > 0, got {value}")
-    
+
     @property
     def theta_std_rad(self):
         """Convert theta_std from degrees to radians."""
         return np.deg2rad(self.theta_std_deg)
-    
+
     @property
     def theta0_std_rad(self):
         """Convert theta0_std from degrees to radians."""
         return np.deg2rad(self.theta0_std_deg)
-    
+
     @property
     def bearing_std_rad(self):
         """Convert bearing_std from degrees to radians."""
@@ -53,29 +55,29 @@ class NoiseConfig:
     def odometry_vec(self):
         """Return process noise vector."""
         return np.array([self.x_std, self.y_std, self.theta_std_rad], dtype=np.float64)
-    
+
     @property
     def measurement_vec(self):
         """Return measurement noise vector."""
         return np.array([self.bearing_std_rad, self.range_std], dtype=np.float64)
-    
+
     @property
-    def initial_vec(self):
+    def prior_vec(self):
         """Return initial state noise vector."""
         return np.array([self.x0_std, self.y0_std, self.theta0_std_rad], dtype=np.float64)
-    
+
 
 
 @dataclass
 class SimulationConfig:
     """Simulation paramters."""
-    
+
     # Time settings
     dt: float = 0.1  # time step in seconds
     duration: float = 20.0  # total simulation duration in seconds
-    
+
     # Robot initial pose
-    init_pose: Tuple[float, float, float] = (0.0, 0.0, 0.0)  # (x, y, theta) in meters and radians
+    init_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)  # (x, y, theta) in meters and radians
 
     # Noise configuration
     noise: NoiseConfig = field(default_factory=NoiseConfig)
@@ -86,7 +88,7 @@ class SimulationConfig:
 
     # Landmark settings
     num_landmarks: int = 15
-    landmark_bounds: Tuple[float, float, float, float] = (-50.0, 50.0, -50.0, 50.0) # (x_min, x_max, y_min, y_max)
+    landmark_bounds: tuple[float, float, float, float] = (-50.0, 50.0, -50.0, 50.0) # (x_min, x_max, y_min, y_max)
 
     # Sensor settings
     max_sensor_range: float = 15.0   # meters
@@ -95,41 +97,48 @@ class SimulationConfig:
     def __post_init__(self):
         """Validate simulation parameters."""
         if self.dt <= 0:
-            raise ValueError(f"dt must be positive, got {self.dt}")
+            msg = f"dt must be positive, got {self.dt}"
+            raise ValueError(msg)
         if self.duration <= 0:
-            raise ValueError(f"duration must be positive, got {self.duration}")
+            msg = f"duration must be positive, got {self.duration}"
+            raise ValueError(msg)
         if self.num_poses <= 0:
-            raise ValueError(f"num_poses must be positive, got {self.num_poses}")
+            msg = f"num_poses must be positive, got {self.num_poses}"
+            raise ValueError(msg)
         if self.num_landmarks <= 0:
-            raise ValueError(f"num_landmarks must be positive, got {self.num_landmarks}")
+            msg = f"num_landmarks must be positive, got {self.num_landmarks}"
+            raise ValueError(msg)
         if self.max_sensor_range <= 0:
-            raise ValueError(f"max_sensor_range must be positive, got {self.max_sensor_range}")
+            msg = f"max_sensor_range must be positive, got {self.max_sensor_range}"
+            raise ValueError(msg)
         if not (0 < self.sensor_fov_deg <= 360):
-            raise ValueError(f"sensor_fov_deg must be in (0, 360], got {self.sensor_fov_deg}")
+            msg = f"sensor_fov_deg must be in (0, 360], got {self.sensor_fov_deg}"
+            raise ValueError(msg)
       
 
 @dataclass
 class InferenceConfig:
     """Inference parameters."""
-    
+
     # Algorithm selection
     algorithm: str = "isam2"  # Options: "ekf", "isam2", "batch"
 
     # EKF-specific settings
-    
+
     # Noise model (can differ from simulation)
     noise: NoiseConfig = field(default_factory=NoiseConfig)
 
-    init_pose: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    prior_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)
     dead_reckoning: bool = False  # whether to use dead reckoning only (no landmark factors) # TODO: IDE hover support
     
     # Data association settings
-    association_type: str = "jcbb"  # "ground_truth", "jcbb", "maximum_likelihood", "neareast_neighbour", "Constrained Nearnest Neighboor data association
+    association_method: str = "jcbb"  # "ground_truth", "jcbb", "maximum_likelihood", "neareast_neighbour", "Constrained Nearnest Neighboor data association
     alpha_individual: float = 0.999  # confidence levels for individual compatibility test
     alpha_joint: float = 0.9999  # confidence levels for joint compatibility test
 
-    local_filtering_range: float = 30  # local feature filtering radius for data association (should be larger than lidar range)
-    sensor_offset: Tuple[float, float] = (0.0, 0.0)  # (dx, dy) offset of sensor wrt robot body frame NOTE: not used
+    range_gate: float = 90  # local feature filtering radius for data association (should be larger than lidar range)
+    fov_gate_deg: float = 360.0  # local feature filtering FOV for data association (degrees)
+    sensor_offset: tuple[float, float] = (0.0, 0.0)  # (dx, dy) offset of sensor wrt robot body frame NOTE: not used
 
     def __post_init__(self):
         """Validate inference parameters."""
@@ -138,38 +147,40 @@ class InferenceConfig:
         if self.algorithm not in algorithm_options:
             raise ValueError(f"Invalid algorithm {self.algorithm}, must be one of 'ekf', 'isam2', 'batch'")
         
-        association_options = ["ground_truth", "jcbb", "maximum_likelihood"]
-        if self.association_type not in association_options:
-            raise ValueError(f"Invalid association_type {self.association_type}, must be one of {association_options}")
+        association_options = ["jcbb", "maximum_likelihood"]
+        if self.association_method not in association_options:
+            raise ValueError(f"Invalid association_type {self.association_method}, must be one of {association_options}")
        
         if not (0 < self.alpha_individual < 1):
             raise ValueError(f"alpha_individual must be in (0, 1), got {self.alpha_individual}")
         if not (0 < self.alpha_joint < 1):
             raise ValueError(f"alpha_joint must be in (0, 1), got {self.alpha_joint}")
-        if self.local_filtering_range <= 0:
-            raise ValueError(f"local_filtering_range must be positive, got {self.local_filtering_range}")
+        if self.range_gate <= 0:
+            raise ValueError(f"local_filtering_range must be positive, got {self.range_gate}")
+        if not (0 <= self.fov_gate_deg <= 360):
+            raise ValueError(f"fov_gate_deg must be in [0, 360], got {self.fov_gate_deg}")
         
 
 @dataclass
 class VisualizationConfig:
     """Visualization and plotting settings."""
-    
+
     enabled: bool = True
     real_time: bool = True  # Update plot during simulation
     update_interval: int = 10  # Update every N steps
-    
+
     # Plot settings
-    figure_size: Tuple[int, int] = (12, 8)
+    figure_size: tuple[int, int] = (12, 8)
     show_trajectory: bool = True
     show_landmarks: bool = True
     show_uncertainty: bool = True
     show_observations: bool = False
-    
+
     # Save settings
     save_plots: bool = False
     output_dir: str = "./results"
     save_format: str = "png"  # png, pdf, svg
-    
+
     def __post_init__(self):
         """Validate visualization parameters."""
         if self.update_interval <= 0:
@@ -202,8 +213,8 @@ class SLAMConfig:
         """Validate top-level configuration."""
         if self.seed is not None and self.seed < 0:
             raise ValueError(f"seed must be non-negative or None, got {self.seed}")
-        if self.inference.local_filtering_range < self.simulation.max_sensor_range:
-            warnings.warn(f"local_filtering_range should be larger than max_sensor_range for effective data association, got {self.inference.local_filtering_range} and {self.simulation.max_sensor_range}")
+        if self.inference.range_gate < self.simulation.max_sensor_range:
+            warnings.warn(f"range_gate should be larger than max_sensor_range for effective data association, got {self.inference.range_gate} and {self.simulation.max_sensor_range}")
 
     def summary(self) -> str: # TODO: adjust
         """Return a human-readable summary of the configuration."""
@@ -223,7 +234,7 @@ class SLAMConfig:
             f"  Sensor FOV: {self.simulation.sensor_fov_deg} degrees",
             "Inference Config:",
             f"  Algorithm: {self.inference.algorithm}",
-            f"  Data Association Type: {self.inference.association_type}",
+            f"  Data Association Type: {self.inference.association_method}",
             f"  Alpha Individual: {self.inference.alpha_individual}",
             f"  Alpha Joint: {self.inference.alpha_joint}",
             f"  Local Filtering Range: {self.inference.local_filtering_range} m",
@@ -241,8 +252,8 @@ class SLAMConfig:
             f"  Save Format: {self.visualization.save_format}",
         ]
         return "\n".join(lines)
-    
-        
+
+
 def load_config(config_path: str) -> SLAMConfig:
     """
     Load configuration from a YAML file.
@@ -252,6 +263,7 @@ def load_config(config_path: str) -> SLAMConfig:
 
     Returns:
         SLAMConfig object with validated parameters.
+
     """
     from omegaconf import OmegaConf
 
@@ -259,7 +271,7 @@ def load_config(config_path: str) -> SLAMConfig:
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
+
     # Load YAML file
     yaml_conf = OmegaConf.load(config_path)
 
@@ -267,11 +279,11 @@ def load_config(config_path: str) -> SLAMConfig:
     config = OmegaConf.to_object(
         OmegaConf.merge(
             OmegaConf.structured(SLAMConfig), # Default values
-            yaml_conf # Override with YAML values
+            yaml_conf, # Override with YAML values
         )
     )
 
-    return config
+    return config  # type: ignore
 
 def save_config(config: SLAMConfig, output_path: str) -> None:
     """
@@ -281,7 +293,7 @@ def save_config(config: SLAMConfig, output_path: str) -> None:
         config: SLAMConfig object to save
         output_path: Path where YAML file will be saved
     """
-    from omegaconf import OmegaConf
+    
     
     # Convert to OmegaConf and save
     omega_config = OmegaConf.structured(config)
@@ -312,7 +324,7 @@ def merge_configs(base_config: SLAMConfig, override_config_path: str) -> SLAMCon
     merged = OmegaConf.merge(base_omega, override_yaml)
     
     # Convert back to dataclass
-    return OmegaConf.to_object(merged)
+    return OmegaConf.to_object(merged) # type: ignore
 
 
 

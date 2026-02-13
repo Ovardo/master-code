@@ -1,14 +1,12 @@
-"""
-Utility helpers for GTSAM.
-"""
+"""Utility helpers for GTSAM."""
 from __future__ import annotations
 
+from typing import Iterable, Mapping, Optional, Sequence
+
+import gtsam
 import numpy as np
-import gtsam 
 
-from typing import Dict, Iterable, List, Mapping, Sequence, Tuple, Optional
 from utils.utils_math import symmetrize
-
 
 # -------------------------------
 # Core utilities
@@ -89,12 +87,12 @@ Marginals object, or you can pass a dims dict explicitly.
 """
 
 
-def _block_indices(keys: Sequence[int], dims: Mapping[int, int]) -> Tuple[Dict[int, Tuple[int, int]], int]:
+def _block_indices(keys: Sequence[int], dims: Mapping[int, int]) -> tuple[dict[int, tuple[int, int]], int]:
     """Compute contiguous [start, end) index slices for each key.
 
     Returns (index_map, total_dim).
     """
-    idx_map: Dict[int, Tuple[int, int]] = {}
+    idx_map: dict[int, tuple[int, int]] = {}
     total = 0
     for k in keys:
         d = int(dims[k])
@@ -107,14 +105,14 @@ def infer_dims(
     keys: Iterable[int],
     values: Optional["gtsam.Values"] = None,
     marginals: Optional["gtsam.Marginals"] = None,
-) -> Dict[int, int]:
+) -> dict[int, int]:
     """Infer per-key block dimensions.
 
     Preference order:
       1) Values (cheap): try vector getter, then typed getters
       2) Marginals (universal, slower): use marginal covariance size
     """
-    dims: Dict[int, int] = {}
+    dims: dict[int, int] = {}
     keys_list = list(keys)
 
     for k in keys_list:
@@ -155,7 +153,7 @@ def infer_dims(
 # -------------------------------
 
 
-def elimination_keys(ordering) -> List[int]:
+def elimination_keys(ordering) -> list[int]:
     """Return keys in the elimination ordering of a GTSAM Ordering object."""
     return [ordering.at(i) for i in range(ordering.size())]
 

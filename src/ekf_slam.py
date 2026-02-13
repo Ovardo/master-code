@@ -7,7 +7,7 @@ from utils.utils_math import rotmat2, ssa
 class EKFSLAM:
     def __init__(self, eta_0, P_0, Q_vec, R_vec, big_var=1e6):
         """
-        Extended Kalman Filter for SLAM in SE(2) with range–bearing measurements.
+        Extended Kalman Filter for SLAM in SE(2) with range-bearing measurements.
 
         Parameters
         ----------
@@ -22,6 +22,7 @@ class EKFSLAM:
             [sigma_range, sigma_bearing] note GTSAM uses (bearing, range) ordering.
         big_var : float
             Large variance to initialize unknown landmark covariances.
+
         """
         self.eta = eta_0.copy()
         self.P = P_0.copy()
@@ -70,6 +71,7 @@ class EKFSLAM:
         -------
         eta_pred, P_pred : np.ndarray
             Predicted mean and covariance (also stored in self.eta, self.P).
+
         """
         x_prev = self.eta[:3]
         m_prev = self.eta[3:].reshape(-1, 2)
@@ -109,6 +111,7 @@ class EKFSLAM:
         Returns
         -------
         eta_upd, P_upd : updated mean and covariance (also stored in self.eta, self.P)
+
         """
         if len(measurements_for_pose) == 0:
             return self.eta, self.P
@@ -183,7 +186,7 @@ class EKFSLAM:
         self.P = P_upd
         return self.eta, self.P
 
-    
+
     def initialize_landmark(self, lm_idx, z_ij):
         r, b = z_ij
         x, y, theta = self.eta[:3]

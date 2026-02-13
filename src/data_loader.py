@@ -3,21 +3,23 @@ Victoria Park dataset loader module.
 Handles loading and preprocessing of Victoria Park SLAM dataset.
 """
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterator, Optional
+
 import numpy as np
 from scipy.io import loadmat
-from pathlib import Path
-from dataclasses import dataclass
-from typing import Tuple, List, Optional, Iterator
-from utils.utils_victoria_park import detectTrees, odometry, Car
+
 from utils.utils_math import ssa
+from utils.utils_victoria_park import Car, detectTrees, odometry
 
 
 @dataclass
 class SLAMStep:
     """Data for a single SLAM processing step."""
     k_odo: int  # Odometry step index
-    odometry: Tuple[float, float, float]  # (x, y, theta) odometry since last step
-    measurements: List[Tuple[float, float]]  # List of (range, bearing) measurements
+    odometry: tuple[float, float, float]  # (x, y, theta) odometry since last step
+    measurements: list[tuple[float, float]]  # list of (range, bearing) measurements
     has_laser: bool  # Whether this step includes laser measurements
     timestamp: float  # Current timestamp
 
@@ -87,7 +89,7 @@ class VictoriaParkLoader:
         self.t = self.time_odo[0] # time of last processed step (start with first odometry timestamp)
     
     @property
-    def initial_position(self) -> Tuple[float, float, float]:
+    def initial_position(self) -> tuple[float, float, float]:
         """Return initial position (x, y, theta) from GPS data."""
         return (self.Lo_m[0], self.La_m[0], 36 * np.pi / 180)
     

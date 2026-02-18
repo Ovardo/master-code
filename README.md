@@ -25,6 +25,8 @@ TODO:
 - [ ] Visualization of SLAM results, instead of plotting each step, make a video that can be stepped trough.  
 - [ ] Implement data association (JCBB)   
 
+- [ ] Sensor offset might cause the creation of duplicate landmarks
+- [ ] Add ambiguis measurement handling (-2)
 
 
 

@@ -2,3 +2,4 @@ omegaconf
 numpy
 matplotlib
 gtsam
+lap

@@ -147,7 +147,7 @@ class InferenceConfig:
         if self.algorithm not in algorithm_options:
             raise ValueError(f"Invalid algorithm {self.algorithm}, must be one of 'ekf', 'isam2', 'batch'")
         
-        association_options = ["jcbb", "maximum_likelihood"]
+        association_options = ["jcbb", "ml"]
         if self.association_method not in association_options:
             raise ValueError(f"Invalid association_type {self.association_method}, must be one of {association_options}")
        
@@ -165,30 +165,26 @@ class InferenceConfig:
 class VisualizationConfig:
     """Visualization and plotting settings."""
 
-    enabled: bool = True
-    real_time: bool = True  # Update plot during simulation
-    update_interval: int = 10  # Update every N steps
+    # enabled: bool = True
+    # real_time: bool = True  # Update plot during simulation
+    # update_interval: int = 10  # Update every N steps
 
-    # Plot settings
+    # Estimates plot settings
     figure_size: tuple[int, int] = (12, 8)
     show_trajectory: bool = True
     show_landmarks: bool = True
-    show_uncertainty: bool = True
+    show_dead_reckoning: bool = True
+    show_uncertainty: bool = False
     show_observations: bool = False
 
-    # Save settings
+    # Measurements plot settings
+
     save_plots: bool = False
     output_dir: str = "./results"
     save_format: str = "png"  # png, pdf, svg
 
     def __post_init__(self):
         """Validate visualization parameters."""
-        if self.update_interval <= 0:
-            raise ValueError(f"update_interval must be > 0, got {self.update_interval}")
-        
-        valid_formats = ["png", "pdf", "svg"]
-        if self.save_format not in valid_formats:
-            raise ValueError(f"save_format must be one of {valid_formats}, got {self.save_format}")
 
 
 
@@ -223,31 +219,13 @@ class SLAMConfig:
             f"Description: {self.description}",
             f"Random Seed: {self.seed}",
             "Simulation Config:",
-            f"  Time Step (dt): {self.simulation.dt} s",
-            f"  Duration: {self.simulation.duration} s",
-            f"  Initial Pose: {self.simulation.init_pose}",
-            f"  Path Type: {self.simulation.path_type}",
-            f"  Number of Poses: {self.simulation.num_poses}",
-            f"  Number of Landmarks: {self.simulation.num_landmarks}",
-            f"  Landmark Bounds: {self.simulation.landmark_bounds}",
-            f"  Max Sensor Range: {self.simulation.max_sensor_range} m",
-            f"  Sensor FOV: {self.simulation.sensor_fov_deg} degrees",
             "Inference Config:",
             f"  Algorithm: {self.inference.algorithm}",
             f"  Data Association Type: {self.inference.association_method}",
             f"  Alpha Individual: {self.inference.alpha_individual}",
             f"  Alpha Joint: {self.inference.alpha_joint}",
-            f"  Local Filtering Range: {self.inference.local_filtering_range} m",
+            f"  Local Filtering Range: {self.inference.range_gate} m",
             "Visualization Config:",
-            f"  Enabled: {self.visualization.enabled}",
-            f"  Real-time: {self.visualization.real_time}",
-            f"  Update Interval: {self.visualization.update_interval} steps",
-            f"  Figure Size: {self.visualization.figure_size}",
-            f"  Show Trajectory: {self.visualization.show_trajectory}",
-            f"  Show Landmarks: {self.visualization.show_landmarks}",
-            f"  Show Uncertainty: {self.visualization.show_uncertainty}",
-            f"  Show Observations: {self.visualization.show_observations}",
-            f"  Save Plots: {self.visualization.save_plots}",
             f"  Output Directory: {self.visualization.output_dir}",
             f"  Save Format: {self.visualization.save_format}",
         ]
@@ -329,6 +307,7 @@ def merge_configs(base_config: SLAMConfig, override_config_path: str) -> SLAMCon
 
 
 if __name__ == "__main__":
+    
     # Example: Create and save a default configuration
     default_config = SLAMConfig(
         name="example_config",
@@ -344,8 +323,9 @@ if __name__ == "__main__":
     # Load it back
     loaded_config = load_config("src/conf/sandbox/default_config.yaml")
     print("Successfully loaded configuration!")
+    print(f"Name: {loaded_config.name}")
     print(f"Algorithm: {loaded_config.inference.algorithm}")
-    print(f"Simulation dt: {loaded_config.simulation.dt}")
+   
 
 
 

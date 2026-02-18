@@ -16,7 +16,7 @@ simulation:
     y_std: 0.1
     theta_std_deg: 0.1
     bearing_std_deg: 1.0
-    range_std: 0.2
+    range_std: 0.4
     x0_std: 0.05
     y0_std: 0.05
     theta0_std_deg: 3.0
@@ -46,20 +46,21 @@ inference:
   noise:
     x_std: 0.1
     y_std: 0.1
-    theta_std_deg: 0.1
-    bearing_std_deg: 2
-    range_std: 0.05
+    theta_std_deg: 0.2
+    bearing_std_deg: 2.1 
+    range_std: 0.2
     x0_std: 0.05
     y0_std: 0.05
     theta0_std_deg: 0.5
 
+
   dead_reckoning: false
 
-  association_method: "jcbb" # "jcbb", "maximum_likelihood" 
+  association_method: "jcbb" # "jcbb ("maximum_likelihood" & "ground_truth" to be implemented)
   alpha_individual: 0.999
   alpha_joint: 0.99999
 
-  range_gate: 90.0
+  range_gate: 95.0 
   fov_gate_deg: 360.0
 
   sensor_offset:
@@ -67,9 +68,9 @@ inference:
   - 0.0
 
 visualization:
-  enabled: true
-  real_time: true
-  update_interval: 10
+  # enabled: true
+  # real_time: true
+  # update_interval: 10
   figure_size:
   - 12
   - 8

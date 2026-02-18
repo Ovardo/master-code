@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
+import gtsam
 import numpy as np
+
+from utils.utils_types import PredictedMeasurement
 
 
 @dataclass
@@ -11,21 +14,21 @@ class StepRecord:
     step: int
 
     # state snapshots
-    poses: Optional[np.ndarray] = None  # (step+1, 3) 
-    landmarks: Optional[np.ndarray] = None   # (L, 2)
+    poses: Optional[list[gtsam.Pose2]] = None  # (step+1, 3) 
+    landmarks: Optional[gtsam.Point2] = None   # (L, 2)
 
     # measurements + prediction
-    measurements: Optional[np.ndarray] = None  # (M, 2) [range, bearing]
-    predicted_measurements: Optional[np.ndarray] = None  # (L',2) [range, bearing]
+    measurements: Optional[list[tuple[float, gtsam.Rot2]]] = None  # (M, 2) [range, bearing]
+    predicted_measurements: Optional[list[PredictedMeasurement]] = None  # (L',2) [range, bearing]
     predicted_pose: Optional[np.ndarray] = None # (3,)
 
     # associations
-    associations: Optional[list[int]] = None  # length M, -1 for unassociated, >=0 for index of global landmarks
+    associations_ids: Optional[np.ndarray] = None  # (M,) -1 for unassociated, >=0 for index of global landmarks (L)
+    associations_idx: Optional[np.ndarray] = None  # (M,) -1 for unassociated, >=0 for index of predicted measurements (L')
     
     # Optional future fields (nice to have for JCBB analysis)
     cov_innovation: Optional[np.ndarray] = None  # (L', L') full innovation covariance
     cov_current_pose: Optional[np.ndarray] = None  # (3,3) covariance of last pose (pose k)
-
 
 
 class SLAMHistory:
@@ -41,6 +44,8 @@ class SLAMHistory:
         self._records[k] = record
 
     def get(self, step: int) -> Optional[StepRecord]:
+        if step == -1:
+            step = max(self._records.keys())  # get last step
         return self._records.get(step)
 
     def get_or_raise(self, step: int) -> StepRecord:

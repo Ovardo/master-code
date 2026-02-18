@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+import lap
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
@@ -70,14 +71,20 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     # ic has measurements rowwise and predicted measurements columnwise
     ic = individualCompatibility(z, zbar, S)
     g2 = chi2.isf(1-alpha_individual, 2)
+    g2_ambigious = chi2.isf(1-0.97, 2) # TODO: floating threshold for ambigious associations (currently fixed at 95% confidence)
     order = np.argsort(np.amin(ic, axis=1))
-    zo = z[order]
-    ico = ic[order]
+    z_ordered = z[order]
+    ic_ordered = ic[order]
     j = 0
 
-    abesto = _JCBBrec(zo, zbar, S, alpha_joint, g2, j, a, ico, abest)
+    abest_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, abest)
+    
+    for i, j in enumerate(abest_ordered): # i: measurment index in ordered, j: associated landmark index or -1
+        if j >= 0: # measurment i accoicated with landmark j
+            if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
+                abest_ordered[i] = -2
 
-    abest[order] = abesto
+    abest[order] = abest_ordered
 
     return abest
 
@@ -119,7 +126,7 @@ def _JCBBrec(z, zbar, S, alpha_joint, g2, j, a, ic, abest):
     return abest
 
 
-def ML_association(z, zbar, S, alpha_individual):
+def ML_association_(z, zbar, S, alpha_individual):
     """Maximum Likelihood association based on individual compatibility.
 
     Parameters
@@ -155,17 +162,94 @@ def ML_association(z, zbar, S, alpha_individual):
     threshold_new = chi2.isf(1-alpha_individual, df=2)
     threshold_ambigious = chi2.isf(1-0.95, df=2) # TODO: floating threshold
 
+    cost, x, y = lap.lapjv(ic, extend_cost=True) # modifies ic in-place to contain the optimal assignment costs, and returns the assignment in a separate array
+
+    # for i in range(M):
+    #     # Find the best match for measurement i
+    #     j_best = np.argmin(ic[i])
+    #     if ic[i, j_best] > threshold_new:
+    #         a[i] = -1  # No association, measurement i is an outlier
+    #     elif ic[i, j_best] > threshold_ambigious:
+    #         a[i] = -2  # Ambiguous association, could be an outlier or a valid match
+    #     else:
+    #         a[i] = j_best  # Associate measurement i with predicted measurement j_best
+
+    return x
+
+
+def ML_association(z, zbar, S, alpha_individual,
+                   alpha_ambiguous=0.95,
+                   outlier_cost=None):
+    """
+    Returns:
+        a: (M,) with -1 unassociated, -2 ambiguous, >=0 index into zbar
+    """
+    M = z.shape[0]
+    L = zbar.shape[0]
+
+    if M == 0:
+        return np.array([], dtype=int)
+    if L == 0:
+        return np.full(M, -1, dtype=int)
+
+    # Individual compatibility costs (Mahalanobis^2)
+    ic = individualCompatibility(z, zbar, S).astype(float)  # shape (M, L)
+
+    # Chi-square gates (2 DOF)
+    threshold_new = chi2.isf(1 - alpha_individual, df=2)
+    threshold_amb = chi2.isf(1 - alpha_ambiguous, df=2)
+
+    # Decide outlier_cost if not provided:
+    # A common choice is the new-landmark gate itself or slightly below/above it.
+    if outlier_cost is None:
+        outlier_cost = threshold_new  # reasonable default
+
+    # 1) Gate impossible pairs
+    BIG = 1e9
+    gated = ic.copy()
+    gated[gated > threshold_new] = BIG
+
+    # 2) Add dummy columns (one per measurement) to allow "no match"
+    # Cost to assign measurement i to its own dummy column = outlier_cost
+    dummy = np.full((M, M), outlier_cost, dtype=float)
+
+    # Full cost matrix: (M, L+M)
+    C = np.hstack([gated, dummy])
+
+    # 3) Solve assignment
+    total_cost, x, y = lap.lapjv(C, extend_cost=True)
+
+    # 4) Decode solution
+    a = np.full(M, -1, dtype=int)
     for i in range(M):
-        # Find the best match for measurement i
-        j_best = np.argmin(ic[i])
-        if ic[i, j_best] > threshold_new:
-            a[i] = -1  # No association, measurement i is an outlier
-        elif ic[i, j_best] > threshold_ambigious:
-            a[i] = -2  # Ambiguous association, could be an outlier or a valid match
+        j = x[i]
+        if j < 0:
+            a[i] = -1
+            continue
+
+        if j < L:
+            # assigned to a real landmark
+            cij = ic[i, j]  # original (ungated) cost
+            if cij > threshold_new:
+                # should not happen if gating worked, but safe
+                a[i] = -1
+            elif cij > threshold_amb:
+                a[i] = -2
+            else:
+                a[i] = j
         else:
-            a[i] = j_best  # Associate measurement i with predicted measurement j_best
+            # assigned to dummy => no association
+            # If you want to label "ambiguous" when it's close to being plausible:
+            # (e.g. best real match is between threshold_amb and threshold_new)
+            best_real = np.min(ic[i]) if L > 0 else np.inf
+            if threshold_amb < best_real <= threshold_new:
+                a[i] = -2
+            else:
+                a[i] = -1
 
     return a
+
+
 
 
 

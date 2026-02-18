@@ -66,7 +66,7 @@ class FactorGraphSLAM:
 
         # Initialize graph with prior on initial pose
         initial_pose_noise = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.prior_vec)
-        self._add_prior_factor(gtsam.Pose2(initial_pose), initial_pose_noise)
+        self._add_prior_factor(gtsam.Pose2(*initial_pose), initial_pose_noise)
 
 
     def _add_prior_factor(self, prior_pose: gtsam.Pose2, prior_pose_noise: np.ndarray):
@@ -101,7 +101,7 @@ class FactorGraphSLAM:
         for zbar in zbar_list:
             range = zbar.zbar[0]
             bearing = zbar.zbar[1]
-            if range < self.cfg.range_gate and bearing < np.deg2rad(self.cfg.fov_gate_deg):
+            if range < self.cfg.range_gate and np.abs(bearing) < np.deg2rad(self.cfg.fov_gate_deg)/2:
                 zbar_gated_list.append(zbar)
         return zbar_gated_list
 
@@ -178,7 +178,7 @@ class FactorGraphSLAM:
 
         return S
 
-    def compute_association(self, z_list: list[tuple[float, gtsam.Rot2]], zbar_list: list[PredictedMeasurement], S: np.ndarray) -> list[int]: 
+    def compute_association(self, z_list: list[tuple[float, gtsam.Rot2]], zbar_list: list[PredictedMeasurement], S: np.ndarray) -> tuple[np.ndarray, np.ndarray]: 
         """Compute association between measurements and predicted measurements using self.associator."""
         
         # Convert to numpy arrays for associator
@@ -186,18 +186,13 @@ class FactorGraphSLAM:
         predicted_measurements = np.array([(zbar.zbar) for zbar in zbar_list])
         
         # Do association
-        association = self.associator.associate(measurements, predicted_measurements, S)
+        association_indices = self.associator.associate(measurements, predicted_measurements, S)
     
         # As Assoicator.associat returns indices into zbar for each measurement, we need to convert to landmark IDs
-        association_lm_ids = []
-        for a in association:
-            if a >= 0:
-                lm_id = zbar_list[a].lm_id
-                association_lm_ids.append(lm_id)
-            else:
-                association_lm_ids.append(a)  # keep -1 and -2 as is
+        association_ids = association_indices
+        association_ids[association_indices >= 0] = [zbar_list[a].lm_id for a in association_indices if a >= 0]
 
-        return association
+        return association_ids, association_indices
     
     # def process_step(self, z_odometry: tuple[float, float, float], z_range_bearing: list[tuple[float, float]]) -> StepRecord:
     def process_step(self, z_odometry: gtsam.Pose2, z_range_bearing: list[tuple[float, gtsam.Rot2]]) -> StepRecord:
@@ -218,7 +213,7 @@ class FactorGraphSLAM:
         """
 
         if self.num_steps == 0:
-            asssocations = [-1] * len(z_range_bearing)
+            asssoc_ids = np.full(len(z_range_bearing), -1)
         else:
             pose_prev = self.values.atPose2(X(self.num_steps - 1))
             pose_pred = pose_prev.compose(z_odometry)
@@ -229,22 +224,23 @@ class FactorGraphSLAM:
             cov_prev_W = self.extract_covariance(zbar_gated_list)
             cov_pred_W = self.propagate_covariance(cov_prev_W, pose_prev, z_odometry)
             cov_innovation = self.compute_innovation_covariance(zbar_gated_list, pose_pred, cov_pred_W)
-            asssocations = self.compute_association(z_range_bearing, zbar_gated_list, cov_innovation)
+            asssoc_ids, assoc_idx = self.compute_association(z_range_bearing, zbar_gated_list, cov_innovation)
             
-        print(asssocations)
+        # print(asssocations)
 
-        self.update_graph(z_odometry, z_range_bearing, asssocations)
+        self.update_graph(z_odometry, z_range_bearing, asssoc_ids)
         self.optimize_graph()
 
         # ---- store history ----
         record = StepRecord(
             step=self.num_steps,
-            poses=None,  # TODO
-            landmarks=None,  # TODO
+            poses=self.get_estimated_poses(), 
+            landmarks=self.get_estimated_landmarks(), 
             measurements=z_range_bearing,
             predicted_measurements=zbar_gated_list,
+            associations_ids=asssoc_ids,
+            associations_idx=assoc_idx,
             predicted_pose=pose_pred,
-            associations=asssocations,
             cov_innovation=cov_innovation,
         )
 
@@ -257,7 +253,7 @@ class FactorGraphSLAM:
         self,
         odometry: Optional[gtsam.Pose2],
         landmark_measurements: list[tuple[float, gtsam.Rot2]],
-        associations: list[int],
+        associations: np.ndarray,
     ) -> None:
         """
         Process one SLAM step
@@ -312,36 +308,29 @@ class FactorGraphSLAM:
         self.new_values.insert(X(to_idx), predicted_pose)
 
     def _add_landmark_measurements(
-        self, measurements: list[tuple[float, gtsam.Rot2]], associations: list[int]
+        self, measurements: list[tuple[float, gtsam.Rot2]], associations: np.ndarray
     ):
         """Add landmark measurement factors"""
         pose_key = X(self.num_steps)
 
         # j is measurement index, a_j is associated landmark index
-        for j, ((z_range, z_bearing), a_j) in enumerate(zip(measurements, associations)):
-            if a_j == -2:  # ambiguous association, could be outlier or valid match. For now, treat as outlier (no factor)
-                continue
-            elif a_j > -1:  # measurement j associated with previously observed landmark a_j
-                meas_factor = gtsam.BearingRangeFactor2D(
-                    pose_key, L(a_j), z_bearing, z_range, self.measurement_noise
-                )
+        for (r, b), a_j in zip(measurements, associations):
+            if a_j >= 0:  # measurement j associated with previously observed landmark a_j
+                meas_factor = gtsam.BearingRangeFactor2D(pose_key, L(a_j), b, r, self.measurement_noise)
                 self.graph.add(meas_factor)
                 self.new_factors.add(meas_factor)
-
-            else:  # a_j = -1, i.e measurement j not associated with any landmark
+            elif a_j == -1:  # new landmark, initialize and add factor
                 lm_key = L(self.num_landmarks)
                 self.num_landmarks += 1
-                measure_factor = gtsam.BearingRangeFactor2D(
-                    pose_key,
-                    lm_key,
-                    z_bearing,
-                    z_range,
-                    self.measurement_noise_birth,
-                )
-                self.graph.add(measure_factor)
-                self.new_factors.add(measure_factor)
-
-                self._initialize_landmark(lm_key, pose_key, z_range, z_bearing)
+                meas_factor = gtsam.BearingRangeFactor2D(pose_key, lm_key, b, r, self.measurement_noise_birth)
+                self.graph.add(meas_factor)
+                self.new_factors.add(meas_factor)
+                self._initialize_landmark(lm_key, pose_key, r, b)
+            elif a_j == -2:  # ambiguous association, could be outlier or valid match. For now, treat as outlier (no factor)
+                continue
+            else: 
+                raise ValueError(f"Invalid association index: {a_j}")
+        
 
     def _initialize_landmark(self, lm_key: int, pose_key: int, range: float, bearing: gtsam.Rot2) -> None:
         """Initialize a newly observed landmark."""

@@ -18,8 +18,8 @@ from utils.utils_victoria_park import Car, detectTrees, odometry
 class SLAMStep:
     """Data for a single SLAM processing step."""
     k_odo: int  # Odometry step index
-    odometry: tuple[float, float, float]  # (x, y, theta) odometry since last step
-    measurements: list[tuple[float, float]]  # list of (range, bearing) measurements
+    odometry: np.ndarray # (x, y, theta) odometry since last step
+    measurements: np.ndarray  # l
     has_laser: bool  # Whether this step includes laser measurements
     timestamp: float  # Current timestamp
 
@@ -89,9 +89,9 @@ class VictoriaParkLoader:
         self.t = self.time_odo[0] # time of last processed step (start with first odometry timestamp)
     
     @property
-    def initial_position(self) -> tuple[float, float, float]:
+    def initial_position(self) -> np.ndarray:
         """Return initial position (x, y, theta) from GPS data."""
-        return (self.Lo_m[0], self.La_m[0], 36 * np.pi / 180)
+        return np.array([self.Lo_m[0], self.La_m[0], 36 * np.pi / 180])
     
 
     def get_step(self, k_odo: int) -> SLAMStep:
@@ -122,19 +122,17 @@ class VictoriaParkLoader:
                 raise ValueError(f"Negative time increment at step {k_odo}")
             
             self.t = self.time_lsr[self.k_lsr]  
-            z_odo = odometry(self.speed[k_odo + 1], self.steering[k_odo + 1], dt, self.car)
+            odo = odometry(self.speed[k_odo + 1], self.steering[k_odo + 1], dt, self.car)
         
             # Process laser measurements
-            z_range_bearing = []
-            z = detectTrees(self.laser[self.k_lsr])
-            for z_j in z:
-                z_range_bearing.append( (z_j[0], ssa(z_j[1])) )
-            
+            meas = detectTrees(self.laser[self.k_lsr])
+            meas[:, 1] = ssa(meas[:, 1])
+    
             # Create step with accumulated odometry
             step = SLAMStep(
                 k_odo=k_odo,
-                odometry=z_odo,
-                measurements=z_range_bearing,
+                odometry=odo,
+                measurements=meas,
                 has_laser=True,
                 timestamp=self.t
             )
@@ -146,11 +144,11 @@ class VictoriaParkLoader:
             dt = self.time_odo[k_odo + 1] - self.t
             self.t = self.time_odo[k_odo + 1]
             odo = odometry(self.speed[k_odo + 1], self.steering[k_odo + 1], dt, self.car)
-            
+
             step = SLAMStep(
                 k_odo=k_odo,
                 odometry=odo,  
-                measurements=[],
+                measurements=np.empty((0, 2)),  
                 has_laser=False,
                 timestamp=self.t
             )

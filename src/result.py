@@ -1,10 +1,7 @@
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-import gtsam
 import numpy as np
-
-from utils.utils_types import PredictedMeasurement
 
 
 @dataclass
@@ -14,12 +11,13 @@ class StepRecord:
     step: int
 
     # state snapshots
-    poses: Optional[list[gtsam.Pose2]] = None  # (step+1, 3) 
-    landmarks: Optional[gtsam.Point2] = None   # (L, 2)
+    poses: Optional[np.ndarray] = None  # (step+1, 3) 
+    landmarks: Optional[np.ndarray] = None   # (L, 2)
 
     # measurements + prediction
-    measurements: Optional[list[tuple[float, gtsam.Rot2]]] = None  # (M, 2) [range, bearing]
-    predicted_measurements: Optional[list[PredictedMeasurement]] = None  # (L',2) [range, bearing]
+    measurements: Optional[np.ndarray] = None  # (M, 2) [range, bearing]
+    predicted_measurements: Optional[np.ndarray] = None  # (L',2) [range, bearing]
+    predicted_measurements_ids: Optional[np.ndarray] = None  # (L',) 
     predicted_pose: Optional[np.ndarray] = None # (3,)
 
     # associations

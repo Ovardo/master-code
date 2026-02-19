@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import gtsam
 import numpy as np
@@ -81,38 +80,46 @@ class FactorGraphSLAM:
         self.new_values.insert(X(0), prior_pose)
 
         self.optimize_graph()
-        self.num_steps += 1  # count prior as first step
+        # self.num_steps += 1  # count prior as first step
 
 
-    def get_predicted_measurements(self, pose_pred: gtsam.Pose2) -> list[PredictedMeasurement]:
+    def get_predicted_measurements(self, pose_pred: gtsam.Pose2) -> tuple[np.ndarray, np.ndarray]:
         """Get predicted measurements for all landmarks based on predicted pose estimate and current landmark estimates."""
-        zbar_list = []
-        for lm_id in range(self.num_landmarks):
-            m = self.values.atPoint2(L(lm_id))
-            r = pose_pred.range(m)
-            b = pose_pred.bearing(m).theta() 
-            zbar = np.array([r, b])
-            zbar_list.append(PredictedMeasurement(lm_id=lm_id, zbar=zbar))
-        return zbar_list
-    
-    def gate_predicted_measurements(self, zbar_list: list[PredictedMeasurement]) -> list[PredictedMeasurement]:
-        """Gate predicted measurements based on range and bearing thresholds."""
-        zbar_gated_list = []
-        for zbar in zbar_list:
-            range = zbar.zbar[0]
-            bearing = zbar.zbar[1]
-            if range < self.cfg.range_gate and np.abs(bearing) < np.deg2rad(self.cfg.fov_gate_deg)/2:
-                zbar_gated_list.append(zbar)
-        return zbar_gated_list
+        
+        M = self.num_landmarks
 
-    def extract_covariance(self, zbar_list: list[PredictedMeasurement]) -> np.ndarray:
+        zbar = np.zeros((M,2), dtype=float)  
+        zbar_ids = np.zeros(M, dtype=int) 
+        
+        for j in range(self.num_landmarks):
+            lm = self.values.atPoint2(L(j))
+            zbar[j,0] = pose_pred.range(lm)
+            zbar[j,1] = pose_pred.bearing(lm).theta() 
+            zbar_ids[j] = j 
+        return zbar, zbar_ids
+    
+    def gate_predicted_measurements(self, predicted_measurements, predicted_measurements_ids) -> tuple[np.ndarray, np.ndarray]:
+        """Gate predicted measurements based on range and bearing thresholds."""
+        zbar_gated = []
+        zbar_gated_ids = []
+        for zbar, zbar_id in zip(predicted_measurements, predicted_measurements_ids):
+            range = zbar[0] 
+            bearing = zbar[1] 
+            if range < self.cfg.range_gate and np.abs(bearing) < np.deg2rad(self.cfg.fov_gate_deg)/2:
+                zbar_gated.append(zbar)
+                zbar_gated_ids.append(zbar_id)  
+    
+        return np.array(zbar_gated), np.array(zbar_gated_ids)
+
+
+    def extract_covariance(self, zbar_ids: np.ndarray) -> np.ndarray:
         """Extract joint covariance for predicted measurements from marginals."""
         
         pose_prev_key = X(self.num_steps - 1)
         pose = self.values.atPose2(pose_prev_key)
         
         keys = [pose_prev_key]  # NOTE: order in which the keys are added is important
-        keys += [L(zbar.lm_id) for zbar in zbar_list]   
+        keys += [L(id) for id in zbar_ids]   
           
         marginals = gtsam.Marginals(self.graph, self.values)
 
@@ -154,19 +161,19 @@ class FactorGraphSLAM:
 
     def compute_innovation_covariance(
         self,
-        zbar_list: list[PredictedMeasurement],
+        zbar_ids: np.ndarray,
         pose_pred: gtsam.Pose2,
         cov_world: np.ndarray,
     ):
         """Compute innovation covariance for predicted measurements."""
-        n = len(zbar_list) # num predicted measurements
+        
+        n = len(zbar_ids) # num predicted measurements
 
         H = np.zeros((2 * n, 3 + 2 * n))
         R = np.zeros((2 * n, 2 * n))
-
-        for i, zbar in enumerate(zbar_list):
-            m_key = L(zbar.lm_id)
-            m_i = self.values.atPoint2(m_key)
+ 
+        for i, id in enumerate(zbar_ids):
+            m_i = self.values.atPoint2(L(id))
             H_x = self.sensor_model.H_x(pose2_to_array(pose_pred), m_i)
             H_mi = self.sensor_model.H_m(pose2_to_array(pose_pred), m_i)
             H[2 * i : 2 * i + 2, 0:3] = H_x
@@ -178,31 +185,27 @@ class FactorGraphSLAM:
 
         return S
 
-    def compute_association(self, z_list: list[tuple[float, gtsam.Rot2]], zbar_list: list[PredictedMeasurement], S: np.ndarray) -> tuple[np.ndarray, np.ndarray]: 
+    def compute_association(self, z: np.ndarray, zbar: np.ndarray, zbar_ids, S: np.ndarray) -> tuple[np.ndarray, np.ndarray]: 
         """Compute association between measurements and predicted measurements using self.associator."""
         
-        # Convert to numpy arrays for associator
-        measurements = np.array([(z[0], z[1].theta()) for z in z_list])
-        predicted_measurements = np.array([(zbar.zbar) for zbar in zbar_list])
-        
         # Do association
-        association_indices = self.associator.associate(measurements, predicted_measurements, S)
+        association_indices = self.associator.associate(z, zbar, S)
     
         # As Assoicator.associat returns indices into zbar for each measurement, we need to convert to landmark IDs
-        association_ids = association_indices
-        association_ids[association_indices >= 0] = [zbar_list[a].lm_id for a in association_indices if a >= 0]
+        association_ids = association_indices.copy()  
+        association_ids[association_indices >= 0] = [zbar_ids[idx] for idx in association_indices if idx >= 0]
 
         return association_ids, association_indices
     
     # def process_step(self, z_odometry: tuple[float, float, float], z_range_bearing: list[tuple[float, float]]) -> StepRecord:
-    def process_step(self, z_odometry: gtsam.Pose2, z_range_bearing: list[tuple[float, gtsam.Rot2]]) -> StepRecord:
+    def process_step(self, odometry: gtsam.Pose2, measurements: np.ndarray) -> StepRecord:
         """Main SLAM step processing:
 
         Parameters
         -------
         z_odometry : gtsam.Pose2
             (u, v, psi) representing odometry measurement (relative motion)
-        z_range_bearing: list[tuple[float, gtsam.Rot2]]
+        z_range_bearing: np.ndarray
             (range, bearing) measurements to landmarks
 
         Returns
@@ -213,22 +216,26 @@ class FactorGraphSLAM:
         """
 
         if self.num_steps == 0:
-            asssoc_ids = np.full(len(z_range_bearing), -1)
+            asssoc_ids = np.full(measurements.shape[0], -1, dtype=int)
+            assoc_idx  = np.full(measurements.shape[0], -1, dtype=int)
+
+            zbar_gated = np.empty((0, 2), dtype=float)
+            zbar_gated_ids = np.empty((0,), dtype=int)
         else:
             pose_prev = self.values.atPose2(X(self.num_steps - 1))
-            pose_pred = pose_prev.compose(z_odometry)
+            pose_pred = pose_prev.compose(odometry)
             
-            zbar_list = self.get_predicted_measurements(pose_pred)
-            zbar_gated_list = self.gate_predicted_measurements(zbar_list)
+            zbar, zbar_ids = self.get_predicted_measurements(pose_pred)
+            zbar_gated, zbar_gated_ids = self.gate_predicted_measurements(zbar, zbar_ids)
           
-            cov_prev_W = self.extract_covariance(zbar_gated_list)
-            cov_pred_W = self.propagate_covariance(cov_prev_W, pose_prev, z_odometry)
-            cov_innovation = self.compute_innovation_covariance(zbar_gated_list, pose_pred, cov_pred_W)
-            asssoc_ids, assoc_idx = self.compute_association(z_range_bearing, zbar_gated_list, cov_innovation)
+            cov_prev_W = self.extract_covariance(zbar_gated_ids)
+            cov_pred_W = self.propagate_covariance(cov_prev_W, pose_prev, odometry)
+            cov_innovation = self.compute_innovation_covariance(zbar_gated_ids, pose_pred, cov_pred_W)
+            asssoc_ids, assoc_idx = self.compute_association(measurements, zbar_gated, zbar_gated_ids, cov_innovation)
             
         # print(asssocations)
 
-        self.update_graph(z_odometry, z_range_bearing, asssoc_ids)
+        self.update_graph(odometry, measurements, asssoc_ids)
         self.optimize_graph()
 
         # ---- store history ----
@@ -236,12 +243,11 @@ class FactorGraphSLAM:
             step=self.num_steps,
             poses=self.get_estimated_poses(), 
             landmarks=self.get_estimated_landmarks(), 
-            measurements=z_range_bearing,
-            predicted_measurements=zbar_gated_list,
+            measurements=measurements,
+            predicted_measurements=zbar_gated,
+            predicted_measurements_ids=zbar_gated_ids,
             associations_ids=asssoc_ids,
             associations_idx=assoc_idx,
-            predicted_pose=pose_pred,
-            cov_innovation=cov_innovation,
         )
 
         # Important: update current step
@@ -251,8 +257,8 @@ class FactorGraphSLAM:
 
     def update_graph(
         self,
-        odometry: Optional[gtsam.Pose2],
-        landmark_measurements: list[tuple[float, gtsam.Rot2]],
+        odometry: gtsam.Pose2,
+        landmark_measurements: np.ndarray,
         associations: np.ndarray,
     ) -> None:
         """
@@ -260,7 +266,7 @@ class FactorGraphSLAM:
 
         Args:
             odometry: Relative motion from previous pose (None for first step)
-            landmark_measurements: list of (range, bearing) measurements
+            landmark_measurements: 
             associations: Corresponding landmark IDs for each measurement
 
         Returns:
@@ -272,7 +278,7 @@ class FactorGraphSLAM:
             self._add_odometry(odometry)
 
         # Add range-bearing factors and initialize landmarks
-        if landmark_measurements:
+        if len(landmark_measurements):
             self._add_landmark_measurements(landmark_measurements, associations)
 
 
@@ -292,8 +298,8 @@ class FactorGraphSLAM:
 
     def _add_odometry(self, odometry: gtsam.Pose2):
         """Add odometry factor between consecutive poses"""
-        from_idx = self.num_steps - 1
-        to_idx = self.num_steps
+        from_idx = self.num_steps
+        to_idx = self.num_steps + 1
 
         odom_factor = gtsam.BetweenFactorPose2(
             X(from_idx), X(to_idx), odometry, self.odometry_noise
@@ -308,7 +314,9 @@ class FactorGraphSLAM:
         self.new_values.insert(X(to_idx), predicted_pose)
 
     def _add_landmark_measurements(
-        self, measurements: list[tuple[float, gtsam.Rot2]], associations: np.ndarray
+        self, 
+        measurements: np.ndarray, # (M,2)
+        associations: np.ndarray, # (M,) 
     ):
         """Add landmark measurement factors"""
         pose_key = X(self.num_steps)
@@ -316,13 +324,13 @@ class FactorGraphSLAM:
         # j is measurement index, a_j is associated landmark index
         for (r, b), a_j in zip(measurements, associations):
             if a_j >= 0:  # measurement j associated with previously observed landmark a_j
-                meas_factor = gtsam.BearingRangeFactor2D(pose_key, L(a_j), b, r, self.measurement_noise)
+                meas_factor = gtsam.BearingRangeFactor2D(pose_key, L(a_j), gtsam.Rot2(b), r, self.measurement_noise)
                 self.graph.add(meas_factor)
                 self.new_factors.add(meas_factor)
             elif a_j == -1:  # new landmark, initialize and add factor
                 lm_key = L(self.num_landmarks)
                 self.num_landmarks += 1
-                meas_factor = gtsam.BearingRangeFactor2D(pose_key, lm_key, b, r, self.measurement_noise_birth)
+                meas_factor = gtsam.BearingRangeFactor2D(pose_key, lm_key, gtsam.Rot2(b), r, self.measurement_noise_birth)
                 self.graph.add(meas_factor)
                 self.new_factors.add(meas_factor)
                 self._initialize_landmark(lm_key, pose_key, r, b)
@@ -332,13 +340,13 @@ class FactorGraphSLAM:
                 raise ValueError(f"Invalid association index: {a_j}")
         
 
-    def _initialize_landmark(self, lm_key: int, pose_key: int, range: float, bearing: gtsam.Rot2) -> None:
+    def _initialize_landmark(self, lm_key: int, pose_key: int, range: float, bearing: float) -> None:
         """Initialize a newly observed landmark."""
         current_pose = self.values.atPose2(pose_key)
 
         # Convert from polar to Cartesian in robot frame
-        lm_x_local = range * np.cos(bearing.theta())
-        lm_y_local = range * np.sin(bearing.theta())
+        lm_x_local = range * np.cos(bearing)
+        lm_y_local = range * np.sin(bearing)
         
         # Transform from local to global frame
         lm_local = gtsam.Point2(lm_x_local, lm_y_local)
@@ -356,10 +364,10 @@ class FactorGraphSLAM:
         """Get current robot pose estimate"""
         return self.values.atPose2(X(self.num_steps))
     
-    def get_estimated_poses(self) -> list[gtsam.Pose2]:
+    def get_estimated_poses(self) -> np.ndarray:
         """Get all pose estimates up to current step"""
-        return [self.values.atPose2(X(k)) for k in range(self.num_steps)]
+        return np.array([pose2_to_array(self.values.atPose2(X(k))) for k in range(self.num_steps)])
 
-    def get_estimated_landmarks(self) -> list[gtsam.Point2]:
+    def get_estimated_landmarks(self) -> np.ndarray:
         """Get all landmark estimates up to current step"""
-        return  [self.values.atPoint2(L(l)) for l in range(self.num_landmarks)]
+        return  np.array([self.values.atPoint2(L(lm)) for lm in range(self.num_landmarks)])

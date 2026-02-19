@@ -6,7 +6,7 @@ def rotmat2(theta: float) -> np.ndarray:
     return np.array([[c, -s],
                      [s,  c]])
 
-def ssa(angle: float) -> float:
+def ssa(angle):
     """Smallest Signed Angle between -pi and pi."""
     return (angle + np.pi) % (2 * np.pi) - np.pi
 

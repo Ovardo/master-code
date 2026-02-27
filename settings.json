@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "python",
+    "python.envFile": "${workspaceFolder}/.env",
+}

@@ -83,6 +83,10 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
         if j >= 0: # measurment i accoicated with landmark j
             if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
                 abest_ordered[i] = -2
+        if j == -1: # if the measurement is unassociated, 
+            if np.min(ic_ordered[i]) <= g2_ambigious:
+                abest_ordered[i] = -2
+
 
     abest[order] = abest_ordered
 

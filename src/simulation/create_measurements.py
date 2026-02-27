@@ -2,7 +2,7 @@ import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
 
-from config import SLAMConfig, SimulationConfig, InferenceConfig
+from config import InferenceConfig, SimulationConfig, SLAMConfig
 
 
 class RobotSimulatorSE2:
@@ -17,10 +17,10 @@ class RobotSimulatorSE2:
         self.gt_observations = gt_data["observations"]  # dict[int, list[int]]
 
         self.odometry_noise_sampler = gtsam.Sampler(
-            sigmas=cfg.noise.odometry_vec, seed=cfg.odom_seed
+            sigmas=cfg.noise.odometry_std, seed=cfg.odom_seed
         )
         self.measurement_noise_sampler = gtsam.Sampler(
-            sigmas=cfg.noise.measurement_vec, seed=cfg.meas_seed # TODO: check order of measurement vec
+            sigmas=cfg.noise.measurement_std, seed=cfg.meas_seed # TODO: check order of measurement vec
         )
 
     def generate_odometry_measurements(self) -> list[tuple[np.ndarray, int, int]]:
@@ -112,8 +112,8 @@ def build_nonlinear_factor_graph(
 
     # Create noise models
     prior_noise_model = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.initial_vec)
-    odometry_noise_model = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.odometry_vec) 
-    measurement_noise_model = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.measurement_vec) # TODO: check order of measurement vec
+    odometry_noise_model = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.odometry_std) 
+    measurement_noise_model = gtsam.noiseModel.Diagonal.Sigmas(cfg.noise.measurement_std) # TODO: check order of measurement vec
 
     # Add prior factor
     prior_mean = gtsam.Pose2(*gt_data["poses"][0])
@@ -241,8 +241,8 @@ if __name__ == "__main__":
     # Build factor graph with different noise models than simulation
     # This represents our (potentially incorrect) belief about the noise
     cfg_inf = InferenceConfig()
-    cfg_inf.noise.odometry_vec = np.array([0.1, 0.1, 0.0]) # TODO: implement setters
-    cfg_inf.noise.measurement_vec = np.array([0.1, 0.1])  # TODO: implement setters
+    cfg_inf.noise.odometry_std = np.array([0.1, 0.1, 0.0]) # TODO: implement setters
+    cfg_inf.noise.measurement_std = np.array([0.1, 0.1])  # TODO: implement setters
     cfg_inf.noise.initial_vec = np.array([0.0, 0.0, 0.0]) # TODO: assign setters
 
     nfg, initial_estimate = build_nonlinear_factor_graph(sim_data, gt_data, cfg_inf)
@@ -269,8 +269,8 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("Running with perfect noise knowledge:")
 
-    cfg_inf.noise.odometry_vec = cfg_sim.noise.odometry_vec
-    cfg_inf.noise.measurement_vec = cfg_sim.noise.measurement_vec
+    cfg_inf.noise.odometry_std = cfg_sim.noise.odometry_std
+    cfg_inf.noise.measurement_std = cfg_sim.noise.measurement_std
     cfg_inf.noise.initial_vec = cfg_sim.noise.initial_vec
 
     nfg_perfect, initial_estimate_perfect = build_nonlinear_factor_graph(

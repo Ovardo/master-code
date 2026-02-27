@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+
 from utils.utils_math import cartesian2polar, rotmat2, ssa
 
 
@@ -16,7 +17,7 @@ class RangeBearing:
     max_range: float = 7.5  # [m] (currently not used)
     max_fov: float = 2 * np.pi  # [rad] (currently not used)
     sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
-    
+
     def h_(self, x: np.ndarray, m_i: np.ndarray) -> np.ndarray:
         """Calculate the measurement prediction function h_ for a single landmark.
 
@@ -32,14 +33,20 @@ class RangeBearing:
         np.ndarray, shape=(2,)
             the predicted measurement.
         """
-        R_w_b = rotmat2(x[2])
-        delta_w = (
-            m_i - x[:2]
-        )  # TODO: add some handling if landmark is very close to robot position
+        psi = x[2]
+        R_w_b = rotmat2(psi)
+
+        # world position of sensor origin
+        p_s = x[:2] + R_w_b @ self.sensor_offset  # body->sensor, expressed in body
+
+        # vector from sensor to landmark in world
+        delta_w = m_i - p_s
+
+        # express in body/sensor frame (same orientation)
         delta_b = R_w_b.T @ delta_w
+
         r, theta = cartesian2polar(delta_b[0], delta_b[1])
-        z_i = np.array([r, ssa(theta)])
-        return z_i
+        return np.array([r, ssa(theta)])
 
     def h(self, x: np.ndarray, m: np.ndarray) -> np.ndarray:
         """Calculate the measurement prediction function h for multiple landmarks.
@@ -78,24 +85,38 @@ class RangeBearing:
         np.ndarray, shape=(2,3)
             The Jacobian of h_ wrt. x.
         """
-        Hx = np.zeros((2,3))
+        psi = x[2]
+        R_w_b = rotmat2(psi)
 
-        delta_w = m_i - x[:2]
-        r = np.linalg.norm(delta_w)
+        # Use q = R^T(m-p) - b_s (same as computing from sensor pose)
+        delta = m_i - x[:2]                 # (m - p)
+        q = R_w_b.T @ delta - self.sensor_offset
+        q1, q2 = q
 
+        r2 = q1*q1 + q2*q2
+        r = np.sqrt(r2)
         if r < 1e-6:
-            raise ValueError("Jacobian undefined for landmark very close to robot position.") # TODO: handle better
+            raise ValueError("Jacobian undefined for landmark very close to sensor.")
 
-        Hx[0,:2] = -delta_w / r
-        Hx[0,2] = 0.0
-        Hx[1,:2] = -(delta_w @ rotmat2(np.pi/2).T) / (r**2)
-        Hx[1,2] = -1.0
+        # J_zq = d[r,theta]/d[q1,q2]
+        J_zq = np.array([
+            [q1/r,      q2/r],
+            [-q2/r2,    q1/r2],
+        ])
 
-        # Make wrt to body frame
-        Hx[:, :2] = Hx[:, :2] @ rotmat2(x[2]) 
+        # dq/d[x,y] = -R^T
+        dq_dpos = -R_w_b.T  # 2x2
 
+        # dq/dpsi = d(R^T)/dpsi * (m-p)
+        # dR^T/dpsi = R^T * [[0,1],[-1,0]]
+        S = np.array([[0.0, 1.0],
+                    [-1.0, 0.0]])
+        dq_dpsi = R_w_b.T @ (S @ delta)     # 2,
+
+        Hx = np.zeros((2, 3))
+        Hx[:, :2] = J_zq @ dq_dpos
+        Hx[:, 2]  = (J_zq @ dq_dpsi).reshape(2,)
         return Hx
-    
 
     def H_m(self, x: np.ndarray, m_i: np.ndarray) -> np.ndarray:
         """Calculate the Jacobian of h_ with respect to m_i.
@@ -112,21 +133,27 @@ class RangeBearing:
         np.ndarray, shape=(2,2)
             The Jacobian of h_ wrt. m_i.
         """
-        Hm = np.zeros((2,2))
+        psi = x[2]
+        R_w_b = rotmat2(psi)
 
-        delta_w = m_i - x[:2]
-        r = np.linalg.norm(delta_w)
+        # compute q = delta_b
+        p_s = x[:2] + R_w_b @ self.sensor_offset
+        delta_b = R_w_b.T @ (m_i - p_s)
 
+        q1, q2 = delta_b
+        r2 = q1*q1 + q2*q2
+        r = np.sqrt(r2)
         if r < 1e-6:
-            raise ValueError("Jacobian undefined for landmark very close to robot position.") # TODO: handle better
+            raise ValueError("Jacobian undefined for landmark very close to sensor.")
 
-        Hm[0,:2] = delta_w / r
-        Hm[1,:2] = (delta_w @ rotmat2(np.pi/2).T) / (r**2)
+        # J_zq = d[r,theta]/d[q1,q2]
+        J_zq = np.array([
+            [q1/r,      q2/r],
+            [-q2/r2,    q1/r2],
+        ])
 
-        # Hx = self.H_x(x, m_i)
-        # Hm = -Hx[:, :2]
-
-        return Hm
+        # dq/dm = R^T
+        return J_zq @ R_w_b.T
 
     def H(self, x: np.ndarray, m: np.ndarray) -> np.ndarray:
         """Calculate the jacobian of h wrt. eta (x, m).

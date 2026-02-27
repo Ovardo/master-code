@@ -12,7 +12,10 @@ class StepRecord:
 
     # state snapshots
     poses: Optional[np.ndarray] = None  # (step+1, 3) 
+    poses_cov: Optional[list[np.ndarray]] = None  # (step+1, 3, 3)
     landmarks: Optional[np.ndarray] = None   # (L, 2)
+    landmarks_cov: Optional[list[np.ndarray]] = None  # (L, 2, 2)
+    poses_dr: Optional[np.ndarray] = None  # (step+1, 3) dead reckoning trajectory
 
     # measurements + prediction
     measurements: Optional[np.ndarray] = None  # (M, 2) [range, bearing]

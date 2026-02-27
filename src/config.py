@@ -52,18 +52,18 @@ class NoiseConfig:
         return np.deg2rad(self.bearing_std_deg)
 
     @property
-    def odometry_vec(self):
-        """Return process noise vector."""
+    def odometry_std(self):
+        """Return process noise vector (3,)."""
         return np.array([self.x_std, self.y_std, self.theta_std_rad], dtype=np.float64)
 
     @property
-    def measurement_vec(self):
-        """Return measurement noise vector."""
+    def measurement_std(self):
+        """Return measurement noise vector (2,)."""
         return np.array([self.bearing_std_rad, self.range_std], dtype=np.float64)
 
     @property
-    def prior_vec(self):
-        """Return initial state noise vector."""
+    def prior_std(self):
+        """Return initial state noise vector (3,)."""
         return np.array([self.x0_std, self.y0_std, self.theta0_std_rad], dtype=np.float64)
 
 

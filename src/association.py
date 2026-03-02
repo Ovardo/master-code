@@ -79,13 +79,13 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
 
     abest_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, abest)
     
-    for i, j in enumerate(abest_ordered): # i: measurment index in ordered, j: associated landmark index or -1
-        if j >= 0: # measurment i accoicated with landmark j
-            if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
-                abest_ordered[i] = -2
-        if j == -1: # if the measurement is unassociated, 
-            if np.min(ic_ordered[i]) <= g2_ambigious:
-                abest_ordered[i] = -2
+    # for i, j in enumerate(abest_ordered): # i: measurment index in ordered, j: associated landmark index or -1
+    #     if j >= 0: # measurment i accoicated with landmark j
+    #         if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
+    #             abest_ordered[i] = -2
+    #     if j == -1: # if the measurement is unassociated, 
+    #         if np.min(ic_ordered[i]) <= g2_ambigious:
+    #             abest_ordered[i] = -2
 
 
     abest[order] = abest_ordered

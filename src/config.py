@@ -11,6 +11,7 @@ from typing import Optional
 import numpy as np
 from omegaconf import OmegaConf
 
+# TODO: default values of classes gets overwritten by yaml file, this is not explicitly stated and may cause confusion for students...
 
 @dataclass
 class NoiseConfig:
@@ -129,7 +130,12 @@ class InferenceConfig:
     noise: NoiseConfig = field(default_factory=NoiseConfig)
 
     prior_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    dead_reckoning: bool = False  # whether to use dead reckoning only (no landmark factors) # TODO: IDE hover support
+
+    # Landmark management settings
+    M: int = 2  # hits to confirm a landmark
+    N: int = 2  # time steps to keep a tentative landmark
+    association_gate: float = 1.5  # ecludian distance threshold for associating unassociated measurements to existing tentative landmarks
+    # max_missed_steps: int = 4  # max consecutive missed steps before pruning a tentative landmark
     
     # Data association settings
     association_method: str = "jcbb"  # "ground_truth", "jcbb", "maximum_likelihood", "neareast_neighbour", "Constrained Nearnest Neighboor data association
@@ -138,6 +144,8 @@ class InferenceConfig:
 
     range_gate: float = 90  # local feature filtering radius for data association (should be larger than lidar range)
     fov_gate_deg: float = 360.0  # local feature filtering FOV for data association (degrees)
+    
+    
     sensor_offset: tuple[float, float] = (0.0, 0.0)  # (dx, dy) offset of sensor wrt robot body frame NOTE: not used
 
     def __post_init__(self):

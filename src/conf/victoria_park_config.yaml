@@ -36,39 +36,39 @@ simulation:
 
 inference:
 
-  algorithm: isam2
+  algorithm: isam2 # or "batch"
 
   prior_pose:
   - 0.0
   - 0.0
   - 0.0
       
-
   noise:
     x_std: 0.1 # 0.1
     y_std: 0.1 # 0.1
-    theta_std_deg: 0.5 # 0.2
+    theta_std_deg: 0.35 # 0.2
     bearing_std_deg: 0.5   # 2.1
     range_std: 0.2 # 0.2
     x0_std: 0.001 # 0.05
     y0_std: 0.001 # 0.05
     theta0_std_deg: 0.005 #0.5
 
-
-  dead_reckoning: false
+  M: 3 # hits to confirm a landmark
+  N: 4 # time steps to keep a tentative landmark
+  association_gate: 1.5 # ecludian distance threshold for associating unassociated measurements to existing tentative landmarks
 
   association_method: "jcbb" # "jcbb ("maximum_likelihood" & "ground_truth" to be implemented)
   alpha_individual: 0.9999
   alpha_joint: 0.99999
 
-  range_gate: 45 #95.0 
+  range_gate: 45 
   fov_gate_deg: 220.0
 
-  sensor_offset:
+  sensor_offset: # not used
   - 3.78
   - 0.5
 
-visualization:
+visualization: # not used? 
   # enabled: true
   # real_time: true
   # update_interval: 10

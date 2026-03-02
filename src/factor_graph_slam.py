@@ -9,15 +9,15 @@ from gtsam.symbol_shorthand import L, X
 from association import Associator
 from config import InferenceConfig
 from models.dynamicmodels import OdometrySE2
-from models.measurementmodels_offset import RangeBearing
+from models.measurementmodels import RangeBearing
 from result import StepRecord
 from utils.utils_gtsam import (
     pose2_to_array,
-    reorder_covariance_auto,
     reorder_covariance_naive,
 )
-from utils.utils_math import make_psd, rotmat2
+from utils.utils_math import make_psd
 from utils.utils_victoria_park import Car, odometry_func
+from landmark_manager import TentativeLandmarkManager, TentativeLandmark
 
 
 class Estimator(ABC):
@@ -41,12 +41,19 @@ class FactorGraphSLAM:
         # Graph and values
         self.graph = gtsam.NonlinearFactorGraph()
         self.values = gtsam.Values()
+        self.graph.replace
         
         # ISAM2 stuff 
         self.new_factors = gtsam.NonlinearFactorGraph()
         self.new_values = gtsam.Values()
         isam_params = gtsam.ISAM2Params()
         self.isam = gtsam.ISAM2(isam_params)
+
+        self.tentative_manager = TentativeLandmarkManager(
+            M = self.cfg.M, 
+            N = self.cfg.N, 
+            association_gate = self.cfg.association_gate
+        )
 
         # Models
         self.motion_model = OdometrySE2( # TODO: remove
@@ -127,13 +134,6 @@ class FactorGraphSLAM:
         
         keys = [pose_pred_key]  # NOTE: order in which the keys are added is important
         keys += [L(id) for id in zbar_ids]   
-
-        # This ensures we are computing covariances based on the latest linearization
-        # linear_graph = self.isam.getFactorsUnsafe()
-        # linear_values = self.isam.calculateBestEstimate()
-
-        # # 2. Compute the marginals
-        # marginals = gtsam.Marginals(linear_graph, linear_values)
           
         marginals = gtsam.Marginals(self.graph, self.values)
 
@@ -255,10 +255,6 @@ class FactorGraphSLAM:
             self.Delta = gtsam.Pose2()
             self.Sigma = np.zeros((3,3))
 
-            # self.isam.update(self.new_factors, self.new_values)
-            # self.new_factors = gtsam.NonlinearFactorGraph()
-            # self.new_values = gtsam.Values()
-
             # Data assocation
             zbar, zbar_ids = self.get_predicted_measurements(pose_pred)
             zbar_gated, zbar_gated_ids = self.gate_predicted_measurements(zbar, zbar_ids)
@@ -267,9 +263,14 @@ class FactorGraphSLAM:
             cov_innovation = self.compute_innovation_covariance(zbar_gated_ids, pose_pred, cov)
             asssoc_ids, assoc_idx = self.compute_association(measurements, zbar_gated, zbar_gated_ids, cov_innovation)
                 
-            self._add_landmark_measurements(measurements, asssoc_ids)
+            self._add_associated_landmark_measurements(measurements, asssoc_ids)
+            confirmed_tentatives = self._process_unassociated_measurements(measurements, asssoc_ids)
+            self._promote_tentative_landmarks(confirmed_tentatives)
+            # self._add_landmark_measurements(measurements, asssoc_ids)
             
             self.optimize_graph()
+
+
 
             # ---- store history ----
             record = StepRecord(
@@ -325,48 +326,158 @@ class FactorGraphSLAM:
         self.num_poses += 1 # pose added
         
         return pose_pred
-
-    def _add_landmark_measurements(
+    
+    def _add_associated_landmark_measurements(
         self, 
-        measurements: np.ndarray, # (M,2)
-        associations: np.ndarray, # (M,) 
+        measurements: np.ndarray, 
+        associations: np.ndarray
     ):
-        """Add landmark measurement factors"""
+        """Add factors only for measurements associated with confirmed landmarks."""
         pose_key = X(self.num_poses-1)
 
-        # j is measurement index, a_j is associated landmark index
         for (r, b), a_j in zip(measurements, associations):
             if a_j >= 0:  # measurement j associated with previously observed landmark a_j
-                meas_factor = gtsam.BearingRangeFactor2D(pose_key, L(a_j), gtsam.Rot2(b), r, self.measurement_noise)
+                meas_factor = gtsam.BearingRangeFactor2D(
+                    pose_key, L(a_j), gtsam.Rot2(b), r, self.measurement_noise
+                )
                 self.graph.add(meas_factor)
                 self.new_factors.add(meas_factor)
-            elif a_j == -1:  # new landmark, initialize and add factor
-                lm_key = L(self.num_landmarks)
-                self.num_landmarks += 1
-                meas_factor = gtsam.BearingRangeFactor2D(pose_key, lm_key, gtsam.Rot2(b), r, self.measurement_noise)
-                self.graph.add(meas_factor)
-                self.new_factors.add(meas_factor)
-                self._initialize_landmark(lm_key, pose_key, r, b)
-            elif a_j == -2:  # ambiguous association, could be outlier or valid match. For now, treat as outlier (no factor)
+            elif a_j in (-1, -2):  
+                # -1: unassociated -> handled by tentative manager
+                # -2: ambiguous/outlier -> currently ignore
                 continue
             else: 
                 raise ValueError(f"Invalid association index: {a_j}")
-        
-    def _initialize_landmark(self, lm_key: int, pose_key: int, range: float, bearing: float) -> None:
-        """Initialize a newly observed landmark."""
+            
+    def _process_unassociated_measurements(
+        self,
+        measurements: np.ndarray,   # (M, 2), columns = [range, bearing]
+        associations: np.ndarray,   # (M,)
+    ) -> list:
+        """
+        Send unassociated measurements to tentative landmark manager.
+
+        Returns a list of tentative landmarks that are now confirmed and ready
+        to be promoted into the factor graph.
+        """
+        pose_key = X(self.num_poses - 1)
         current_pose = self.values.atPose2(pose_key)
 
-        # Convert from polar to Cartesian in robot frame
-        lm_x_local = range * np.cos(bearing)
-        lm_y_local = range * np.sin(bearing)
+        world_measurements = []
+        raw_measurements = []
+
+        for (r, b), a_j in zip(measurements, associations):
+            if a_j == -1:
+                lm_x_local = r * np.cos(b)
+                lm_y_local = r * np.sin(b)
+                lm_local = gtsam.Point2(lm_x_local, lm_y_local)
+                lm_global = current_pose.transformFrom(lm_local)
+
+                world_measurements.append(np.array([lm_global[0], lm_global[1]]))
+                raw_measurements.append(np.array([r, b]))
+
+        confirmed_tentatives = self.tentative_manager.process_unassociated_measurements(
+            current_step=self.num_poses - 1,
+            world_measurements=world_measurements,
+            raw_measurement=raw_measurements,
+        )
+
+        return confirmed_tentatives
+    
+    def _promote_tentative_landmarks(self, confirmed_tentatives: list[TentativeLandmark]) -> None:
+        """
+        Promote confirmed tentative landmarks into the factor graph.
+
+        Simple version:
+        - insert landmark variable
+        - initialize its position
+        - add factor to the pose of the most recent supporting observation
+        """
+        pose_key = X(self.num_poses - 1)
+
+        for tlm in confirmed_tentatives:
+            lm_id = self.num_landmarks
+            lm_key = L(lm_id)
+            self.num_landmarks += 1
+
+            lm_global = gtsam.Point2(float(tlm.position[0]), float(tlm.position[1]))
+            self.values.insert(lm_key, lm_global)
+            self.new_values.insert(lm_key, lm_global)
+
+            # Can adjust to retroactively add old measurement factors
+            # obs = tlm.supporting_observations[-1]
+            # r, b = obs.measurement
+
+            # meas_factor = gtsam.BearingRangeFactor2D(
+            #     pose_key,
+            #     lm_key,
+            #     gtsam.Rot2(float(b)),
+            #     float(r),
+            #     self.measurement_noise,
+            # )
+            # self.graph.add(meas_factor)
+            # self.new_factors.add(meas_factor)
+
+            for obs in tlm.supporting_observations:
+                r, b = obs.measurement
+
+                meas_factor = gtsam.BearingRangeFactor2D(
+                    X(obs.step),
+                    lm_key,
+                    gtsam.Rot2(float(b)),
+                    float(r),
+                    self.measurement_noise,
+                )
+                self.graph.add(meas_factor)
+                self.new_factors.add(meas_factor)
+
+
+            # Optional:
+            # store mapping if you want to remember which tentative became which landmark
+            # self.confirmed_landmark_metadata[lm_id] = ...
+
+
+    # def _add_landmark_measurements(
+    #     self, 
+    #     measurements: np.ndarray, # (M,2)
+    #     associations: np.ndarray, # (M,) 
+    # ):
+    #     """Add landmark measurement factors"""
+    #     pose_key = X(self.num_poses-1)
+
+    #     # j is measurement index, a_j is associated landmark index
+    #     for (r, b), a_j in zip(measurements, associations):
+    #         if a_j >= 0:  # measurement j associated with previously observed landmark a_j
+    #             meas_factor = gtsam.BearingRangeFactor2D(pose_key, L(a_j), gtsam.Rot2(b), r, self.measurement_noise)
+    #             self.graph.add(meas_factor)
+    #             self.new_factors.add(meas_factor)
+    #         elif a_j == -1:  # new landmark, initialize and add factor
+    #             lm_key = L(self.num_landmarks)
+    #             self.num_landmarks += 1
+    #             meas_factor = gtsam.BearingRangeFactor2D(pose_key, lm_key, gtsam.Rot2(b), r, self.measurement_noise)
+    #             self.graph.add(meas_factor)
+    #             self.new_factors.add(meas_factor)
+    #             self._initialize_landmark(lm_key, pose_key, r, b)
+    #         # elif a_j == -2:  # ambiguous association, could be outlier or valid match. For now, treat as outlier (no factor)
+    #         #     continue
+    #         else: 
+    #             raise ValueError(f"Invalid association index: {a_j}")
         
-        # Transform from local to global frame
-        lm_local = gtsam.Point2(lm_x_local, lm_y_local)
-        lm_global = current_pose.transformFrom(lm_local)
+    # def _initialize_landmark(self, lm_key: int, pose_key: int, range: float, bearing: float) -> None:
+    #     """Initialize a newly observed landmark."""
+    #     current_pose = self.values.atPose2(pose_key)
+
+    #     # Convert from polar to Cartesian in robot frame
+    #     lm_x_local = range * np.cos(bearing)
+    #     lm_y_local = range * np.sin(bearing)
         
-        # Insert into values
-        self.values.insert(lm_key, lm_global)
-        self.new_values.insert(lm_key, lm_global)
+    #     # Transform from local to global frame
+    #     lm_local = gtsam.Point2(lm_x_local, lm_y_local)
+    #     lm_global = current_pose.transformFrom(lm_local)
+        
+    #     # Insert into values
+    #     self.values.insert(lm_key, lm_global)
+    #     self.new_values.insert(lm_key, lm_global)
 
 
     def get_marginals(self) -> gtsam.Marginals:

@@ -36,7 +36,7 @@ simulation:
 
 inference:
 
-  algorithm: isam2 # or "batch"
+  algorithm: isam2 # "isam2", "batch"
 
   prior_pose:
   - 0.0
@@ -44,10 +44,10 @@ inference:
   - 0.0
       
   noise:
-    x_std: 0.1 # 0.1
-    y_std: 0.1 # 0.1
-    theta_std_deg: 0.35 # 0.2
-    bearing_std_deg: 0.5   # 2.1
+    x_std: 0.05 # 0.1
+    y_std: 0.05 # 0.1
+    theta_std_deg: 0.1 # 0.2
+    bearing_std_deg: 0.5   
     range_std: 0.2 # 0.2
     x0_std: 0.001 # 0.05
     y0_std: 0.001 # 0.05

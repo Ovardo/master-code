@@ -10,8 +10,8 @@ from scipy.stats import chi2
 from config import InferenceConfig
 from utils import utils_math
 
-chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
+chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
 class Associator:
     def __init__(self, cfg: InferenceConfig):
@@ -71,7 +71,6 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     # ic has measurements rowwise and predicted measurements columnwise
     ic = individualCompatibility(z, zbar, S)
     g2 = chi2.isf(1-alpha_individual, 2)
-    g2_ambigious = chi2.isf(1-0.97, 2) # TODO: floating threshold for ambigious associations (currently fixed at 95% confidence)
     order = np.argsort(np.amin(ic, axis=1))
     z_ordered = z[order]
     ic_ordered = ic[order]
@@ -79,6 +78,7 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
 
     abest_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, abest)
     
+    # g2_ambigious = chi2.isf(1-0.97, 2) # TODO: floating threshold for ambigious associations (currently fixed at 95% confidence)
     # for i, j in enumerate(abest_ordered): # i: measurment index in ordered, j: associated landmark index or -1
     #     if j >= 0: # measurment i accoicated with landmark j
     #         if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
@@ -86,7 +86,6 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     #     if j == -1: # if the measurement is unassociated, 
     #         if np.min(ic_ordered[i]) <= g2_ambigious:
     #             abest_ordered[i] = -2
-
 
     abest[order] = abest_ordered
 
@@ -284,7 +283,6 @@ def individualCompatibility(z, zbar, S):
         for j in range(L):
             dz = z[i] - zbar[j]
             dz[1] = utils_math.ssa(dz[1]) # Important!
-
             S_jj = S[2*j:2*j+2, 2*j:2*j+2]
             ic[i, j] = float(dz.T @ np.linalg.solve(S_jj, dz))
 

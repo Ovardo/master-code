@@ -219,6 +219,7 @@ def reorder_covariance_naive(cov: np.ndarray) -> np.ndarray:
     """
     Roreorder covariance from [lm_id1, lm_id2, ..., pose] to [pose, lm_id1, lm_id2, ...], 
     assuming pose is last 3 entries and rest are landmarks with id(j) < id(j+1)
+    NOTE: this needs more attention when introducing other variable types than X and L in GTSAM
     """
     n = cov.shape[0]
     perm = np.r_[n-3:n, 0:n-3]

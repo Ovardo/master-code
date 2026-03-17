@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-
 import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
@@ -16,15 +14,11 @@ from utils.utils_gtsam import (
     reorder_covariance_naive,
 )
 from utils.utils_math import make_psd
-from utils.utils_victoria_park import Car, odometry_func
+from utils.utils_victoria_park import Car, odometry_func, odom_increment_and_jac_from_ve_alpha
 from landmark_manager import TentativeLandmarkManager, TentativeLandmark
+from data_loader import SLAMStep
 
 
-class Estimator(ABC):
-    @abstractmethod
-    def process_step(self, odometry, measurements):
-        """Process one SLAM step given odometry and measurements. Returns current estimate."""
-        pass
 
 
 class FactorGraphSLAM:
@@ -41,7 +35,6 @@ class FactorGraphSLAM:
         # Graph and values
         self.graph = gtsam.NonlinearFactorGraph()
         self.values = gtsam.Values()
-        self.graph.replace
         
         # ISAM2 stuff 
         self.new_factors = gtsam.NonlinearFactorGraph()
@@ -125,20 +118,74 @@ class FactorGraphSLAM:
                 zbar_gated_ids.append(id)  
 
         return np.array(zbar_gated, dtype=float).reshape(-1, 2), np.array(zbar_gated_ids, dtype=int)
+    
+    def extract_information(self, zbar_ids: np.ndarray) -> np.ndarray:
+        pose_key = X(self.num_poses - 1)
+        keys = [pose_key] + [L(i) for i in zbar_ids]
 
+        marginals = gtsam.Marginals(self.graph, self.values)
+        Lambda = marginals.jointMarginalInformation(keys).fullMatrix()
+        
+        Lambda = reorder_covariance_naive(Lambda) # TODO: is this correct
+        
+        return Lambda
+
+    def compute_innovation_covariance_from_info(self, zbar_ids, pose_pred, Lambda):
+        n = len(zbar_ids)
+        H = np.zeros((2*n, 3 + 2*n))
+        R = np.zeros((2*n, 2*n))
+        R_i = np.diag((self.cfg.noise.range_std**2,
+                    self.cfg.noise.bearing_std_rad**2))
+
+        for i, lid in enumerate(zbar_ids):
+            m_i = self.values.atPoint2(L(lid))
+            H_x  = self.sensor_model.H_x(pose2_to_array(pose_pred), m_i)
+            H_mi = self.sensor_model.H_m(pose2_to_array(pose_pred), m_i)
+            H[2*i:2*i+2, 0:3] = H_x
+            H[2*i:2*i+2, 3+2*i:3+2*i+2] = H_mi
+            R[2*i:2*i+2, 2*i:2*i+2] = R_i
+
+        # Solve Lambda * V = H^T  ->  V = Lambda^{-1} H^T
+        V = np.linalg.solve(Lambda, H.T)          # (3+2n) x (2n)
+        S = H @ V + R                              # (2n) x (2n)
+
+        # numeric hygiene
+        S = 0.5 * (S + S.T)
+        S = make_psd(S)
+        return S
+    
+    def info_func(self, marginals, keys):
+        return marginals.jointMarginalInformation(keys).fullMatrix()
+    
+    def inverse_func(self, matrix):
+        return np.linalg.inv(matrix)
+    
+    def get_marginals_(self) -> gtsam.Marginals:
+        return gtsam.Marginals(self.graph, self.values)
 
     def extract_covariance(self, zbar_ids: np.ndarray) -> np.ndarray:
         """Extract joint covariance for last pose and predicted measurements coresponding to the ids in zbar_ids."""
+        
+        if len(zbar_ids) == 0:
+            print("No predicted measurements after gating, TODO")
         
         pose_pred_key = X(self.num_poses-1)
         
         keys = [pose_pred_key]  # NOTE: order in which the keys are added is important
         keys += [L(id) for id in zbar_ids]   
-          
-        marginals = gtsam.Marginals(self.graph, self.values)
+
+        # self.optimize_graph()  # ensure values are up to date before extracting covariance
+        # marginals = gtsam.Marginals(self.isam.getFactorsUnsafe(), self.values)
+        # marginals = gtsam.Marginals(self.graph, self.values)
+        marginals = self.get_marginals_()
 
         # Joint covariance for previous pose and local landmarks (in local frame)
-        covariance  = marginals.jointMarginalCovariance(keys).fullMatrix()
+        # covariance  = marginals.jointMarginalCovariance(keys).fullMatrix()
+        information = self.info_func(marginals, keys)
+        covariance = self.inverse_func(information)
+        # information = marginals.jointMarginalInformation(keys).fullMatrix()
+        # covariance = np.linalg.inv(information)
+        # print(covariance.shape)
 
         # Reorder covariance to match state ordering
         covariance = reorder_covariance_naive(covariance) # TODO: maybe make more secure
@@ -148,6 +195,28 @@ class FactorGraphSLAM:
         #     target_keys=keys,
         #     values=self.values,
         # )
+
+        # lfg = self.graph.linearize(self.values)
+        # Lambda = lfg.hessian()[0]
+        # Cov = np.linalg.inv(Lambda)
+
+        # marginals = gtsam.Marginals(self.graph, self.values)
+
+        # pose_key = X(self.num_poses-1)
+        # landmark_keys = [L(id) for id in zbar_ids]
+
+        # n = len(landmark_keys)
+        # covariance = np.zeros((3 + 2 * n, 3 + 2 * n))  # (pose + landmarks, pose + landmarks)
+        # for i, lm_key in enumerate(landmark_keys):
+        #     cov = marginals.jointMarginalCovariance([pose_key, lm_key]).fullMatrix() # 5x5 covariance for pose and landmark i
+        #     cov_xx = cov[0:3, 0:3]  # covariance of pose
+        #     cov_xm = cov[0:3, 3:5]  # cross-covariance between pose and landmark i
+        #     cov_mm = cov[3:5, 3:5]  # covariance of landmark i
+
+        #     covariance[:3,:3] = cov_xx
+        #     covariance[:3, 3 + 2 * i : 3 + 2 * i + 2] = cov_xm
+        #     covariance[3 + 2 * i : 3 + 2 * i + 2, :3] = cov_xm.T
+        #     covariance[3 + 2 * i : 3 + 2 * i + 2, 3 + 2 * i : 3 + 2 * i + 2] = cov_mm
 
         return covariance
 
@@ -180,7 +249,13 @@ class FactorGraphSLAM:
 
         return S
 
-    def compute_association(self, z: np.ndarray, zbar: np.ndarray, zbar_ids, S: np.ndarray) -> tuple[np.ndarray, np.ndarray]: 
+    def compute_association(
+            self, 
+            z: np.ndarray, 
+            zbar: np.ndarray, 
+            zbar_ids: np.ndarray, 
+            S: np.ndarray
+        ) -> tuple[np.ndarray, np.ndarray]: 
         """Compute association between measurements and predicted measurements using self.associator."""
         
         # Do association
@@ -195,7 +270,8 @@ class FactorGraphSLAM:
 
     
     # def process_step(self, z_odometry: tuple[float, float, float], z_range_bearing: list[tuple[float, float]]) -> StepRecord:
-    def process_step(self, odometry: gtsam.Pose2, measurements: np.ndarray) -> StepRecord:
+    # def process_step(self, odometry: gtsam.Pose2, measurements: np.ndarray) -> StepRecord:
+    def process_step(self, data: SLAMStep) -> StepRecord:
         """Main SLAM step processing:
 
         Parameters
@@ -212,26 +288,29 @@ class FactorGraphSLAM:
 
         """
         
-        
-        # odo = gtsam.Pose2(*odometry)  
+        odometry, J_odo_u = odom_increment_and_jac_from_ve_alpha(data.ve_dr, data.alpha_dr, data.dt_dr)
 
+        # odo = gtsam.Pose2(*odometry)  
         H1 = np.zeros((3,3), order='F')
         H2 = np.zeros((3,3), order='F')
     
         self.Delta = self.Delta.compose(odometry, H1, H2)
 
-        # Ru = np.diag(np.array([0.02, 2*np.pi/180])**2)
-        # Qu = odom_jacobien @ Ru @ odom_jacobien.T + Qf
-        # Qu += np.diag([1e-6, 1e-6, 1e-8])  # tune (units: m^2, m^2, rad^2)
+        Q_u = np.diag(np.array([0.1, 0.5*np.pi/180])**2)
+        Q_f = np.diag(self.cfg.noise.odometry_std**2)
+        
+        Q_odo = J_odo_u @ Q_u @ J_odo_u.T + Q_f
+        # Q_odo = Q_f
 
-        Qu = np.diag(self.cfg.noise.odometry_std**2)
-
-        self.Sigma = H1 @ self.Sigma @ H1.T + H2 @ Qu @ H2.T
+        self.Sigma = H1 @ self.Sigma @ H1.T + H2 @ Q_odo @ H2.T
 
         # pose_pred = self._add_odometry(odo)
 
+        measurements = data.measurements
         
-        if len(measurements):
+        if len(measurements) == 0:
+            return None
+        else:
             from_idx = self.num_poses - 1
             to_idx = self.num_poses
 
@@ -260,7 +339,10 @@ class FactorGraphSLAM:
             zbar_gated, zbar_gated_ids = self.gate_predicted_measurements(zbar, zbar_ids)
             
             cov = self.extract_covariance(zbar_gated_ids)
+            
             cov_innovation = self.compute_innovation_covariance(zbar_gated_ids, pose_pred, cov)
+            # Lambda = self.extract_information(zbar_gated_ids)
+            # cov_innovation = self.compute_innovation_covariance_from_info(zbar_gated_ids, pose_pred, Lambda)
             asssoc_ids, assoc_idx = self.compute_association(measurements, zbar_gated, zbar_gated_ids, cov_innovation)
                 
             self._add_associated_landmark_measurements(measurements, asssoc_ids)
@@ -271,15 +353,14 @@ class FactorGraphSLAM:
             self.optimize_graph()
 
 
-
             # ---- store history ----
             record = StepRecord(
                 step=self.num_poses-1,
                 poses=self.get_estimated_poses(), 
-                #poses_cov=self.get_estimated_pose_covariances(),
+                # poses_cov=self.get_estimated_pose_covariances(),
                 poses_dr=self.get_poses_dr(),
                 landmarks=self.get_estimated_landmarks(), 
-                #landmarks_cov=self.get_estimated_landmark_covariances(),
+                # landmarks_cov=self.get_estimated_landmark_covariances(),
                 measurements=measurements,
                 predicted_measurements=zbar_gated,
                 predicted_measurements_ids=zbar_gated_ids,
@@ -289,7 +370,6 @@ class FactorGraphSLAM:
             )
 
             return record
-        return None
 
 
     def optimize_graph(self) -> gtsam.Values:
@@ -306,26 +386,26 @@ class FactorGraphSLAM:
         else:
             raise ValueError(f"Unknown algorithm: {self.cfg.algorithm}")
 
-    def _add_odometry(self, odometry: gtsam.Pose2) -> gtsam.Pose2:
-        """Add odometry factor between consecutive poses"""
-        from_idx = self.num_poses - 1
-        to_idx = self.num_poses
+    # def _add_odometry(self, odometry: gtsam.Pose2) -> gtsam.Pose2:
+    #     """Add odometry factor between consecutive poses"""
+    #     from_idx = self.num_poses - 1
+    #     to_idx = self.num_poses
 
-        odom_factor = gtsam.BetweenFactorPose2(
-            X(from_idx), X(to_idx), odometry, self.odometry_noise
-        )
-        self.graph.add(odom_factor)
-        self.new_factors.add(odom_factor)
+    #     odom_factor = gtsam.BetweenFactorPose2(
+    #         X(from_idx), X(to_idx), odometry, self.odometry_noise
+    #     )
+    #     self.graph.add(odom_factor)
+    #     self.new_factors.add(odom_factor)
 
-        # Predict next pose for initialization
-        pose_prev = self.values.atPose2(X(from_idx))
-        pose_pred = pose_prev.compose(odometry)
-        self.values.insert(X(to_idx), pose_pred)
-        self.new_values.insert(X(to_idx), pose_pred)
+    #     # Predict next pose for initialization
+    #     pose_prev = self.values.atPose2(X(from_idx))
+    #     pose_pred = pose_prev.compose(odometry)
+    #     self.values.insert(X(to_idx), pose_pred)
+    #     self.new_values.insert(X(to_idx), pose_pred)
         
-        self.num_poses += 1 # pose added
+    #     self.num_poses += 1 # pose added
         
-        return pose_pred
+    #     return pose_pred
     
     def _add_associated_landmark_measurements(
         self, 
@@ -393,8 +473,6 @@ class FactorGraphSLAM:
         - initialize its position
         - add factor to the pose of the most recent supporting observation
         """
-        pose_key = X(self.num_poses - 1)
-
         for tlm in confirmed_tentatives:
             lm_id = self.num_landmarks
             lm_key = L(lm_id)

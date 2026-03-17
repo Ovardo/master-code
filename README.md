@@ -15,7 +15,8 @@ TODO:
 
 
 ### TODO:   
-- [ ] use struct for sim_data['measurments']  
+- [ ] use struct for sim_data['measurments'] 
+- [ ] put all measurement into a single array with timestamp and measurement type, sort by timestamp, and step through it in the main loop. This will give more natural causal handling of precacaulated measurements
 - [ ] tweak sim_data format in general?  
 - [x] handle landmarks in simulator that are never seen  
 - [ ] handlesteps when no landmarks are seen  

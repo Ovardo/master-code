@@ -134,8 +134,8 @@ class VictoriaParkLoader:
                 raise ValueError(f"Negative time increment at step {k_dr}")
             
             self.t = self.T_lsr[self.k_lsr]  
-            ve_dr = self.Ve_dr[k_dr + 1]
-            alpha_dr = self.Alpha_dr[k_dr + 1]
+            ve_dr = self.Ve_dr[k_dr + 1] # we do not really have this value yet in 
+            alpha_dr = self.Alpha_dr[k_dr + 1] #
 
             # odo = odometry_func(vel, steer, dt)
             odo, J_odo = odom_increment_and_jac_from_ve_alpha(ve_dr, alpha_dr, dt_dr)

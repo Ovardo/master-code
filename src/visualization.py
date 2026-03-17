@@ -438,6 +438,7 @@ class SLAMVisualizer:
         fps: int = 10,
         start_step: int = 1,
         end_step: Optional[int] = None,
+        plot_covariance: bool = False,
         ground_truth_poses: Optional[np.ndarray] = None,
     ):
         """
@@ -463,7 +464,8 @@ class SLAMVisualizer:
             self.plot_estimates(
                 step, ax=ax_est,
                 plot_dead_reckoning=True,
-                ground_truth_poses=ground_truth_poses
+                plot_covariances=plot_covariance,
+                ground_truth_poses=ground_truth_poses 
             )
             self.plot_measurements_cartesian(step, ax=ax_cart)
             

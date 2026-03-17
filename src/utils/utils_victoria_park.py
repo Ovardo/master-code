@@ -414,6 +414,10 @@ def odometry_expmap_w_jacobian(ve, alpha, dt, car, dy_sign=+1.0):
     return odo, J
 
 
+
+
+
+
 # def odometry_w_jacobian(ve, alpha, dt, psi):
 #     car = Car() # use default car parameters
     

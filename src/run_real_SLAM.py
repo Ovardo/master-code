@@ -29,12 +29,11 @@ def main():
 
     history = SLAMHistory()
 
-    K = 5000 # max number of steps to process
+    K = 20000 # max number of steps to process
 
     # %% Run dead reckoning
     x_prev = gtsam.Pose2(*initial_pose) # IMPORTANT: gtsanm.Pose2(initial_pose) is different from gtsam.Pose2(*initial_pose)
     poses_dead_reckoning = [pose2_to_array(x_prev)]
-
 
     for data_k in data_loader.iterate_steps(max_steps=K):
         odo = data_k.odometry
@@ -45,7 +44,6 @@ def main():
         x_prev = x_pred
 
     poses_dead_reckoning = np.array(poses_dead_reckoning)
-
 
     # from scipy.io import loadmat
     # data_folder = Path(__file__).parents[1]
@@ -65,10 +63,13 @@ def main():
         # odometery = gtsam.Pose2(odometry_func(u[0], u[1], dt))
         # measurements = Z[k]
 
-        odometery = data_k.odometry
-        measurements = data_k.measurements  
+        # odometery = data_k.odometry
+        # measurements = data_k.measurements  
         
-        result = slam.process_step(odometery, measurements)
+        # result = slam.process_step(odometery, measurements)
+
+        result = slam.process_step(data_k)
+        
         if result is not None:
             history.add(result)
         
@@ -99,7 +100,7 @@ def main():
     # visualizer.create_estimates_video('videos/estimates.mp4', fps=5, dead_reckoning_poses=poses_dead_reckoning) 
 
     # visualizer.create_measurement_video_polar('measurements_polar.mp4', fps=5)
-    visualizer.create_dashboard_video('videos/dashboard.mp4', fps=5)
+    # visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
 
 
     # fig, ax = visualizer.plot_final_result(slam, marginals, poses_dead_reckoning=poses_dead_reckoning, ax=ax)

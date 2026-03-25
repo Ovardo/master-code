@@ -55,7 +55,7 @@ inference:
 
   M: 3 # hits to confirm a landmark
   N: 4 # time steps to keep a tentative landmark
-  association_gate: 1.5 # ecludian distance threshold for associating unassociated measurements to existing tentative landmarks
+  association_gate: 0.5 # 1.5 # ecludian distance threshold for associating unassociated measurements to existing tentative landmarks
 
   association_method: "jcbb" # "jcbb ("maximum_likelihood" & "ground_truth" to be implemented)
   alpha_individual: 0.9999

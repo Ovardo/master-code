@@ -29,7 +29,7 @@ def main():
 
     history = SLAMHistory()
 
-    K = 20000 # max number of steps to process
+    K = 10000 # max number of steps to process
 
     # %% Run dead reckoning
     x_prev = gtsam.Pose2(*initial_pose) # IMPORTANT: gtsanm.Pose2(initial_pose) is different from gtsam.Pose2(*initial_pose)
@@ -57,6 +57,7 @@ def main():
     # %% Run SLAM 
     k = 0
     for data_k in tqdm(data_loader.iterate_steps(max_steps=K), total=K-1, desc="SLAM"):
+        
         
         # u = U[k]
         # dt = 0.025
@@ -100,7 +101,7 @@ def main():
     # visualizer.create_estimates_video('videos/estimates.mp4', fps=5, dead_reckoning_poses=poses_dead_reckoning) 
 
     # visualizer.create_measurement_video_polar('measurements_polar.mp4', fps=5)
-    # visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
+    visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
 
 
     # fig, ax = visualizer.plot_final_result(slam, marginals, poses_dead_reckoning=poses_dead_reckoning, ax=ax)

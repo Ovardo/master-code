@@ -124,12 +124,10 @@ class TentativeLandmarkManager:
         ----------
         current_step : int
             Current timestep.
-        world_measurements : list[np.ndarray]
+        world_measurements : list[np.ndarray] (x,y)
             Unassociated measurements transformed to world-frame 2D positions.
-        measurement_ids : list[int]
-            IDs of the corresponding measurements in the current scan.
-        robot_pose : np.ndarray
-            Robot pose at current step, stored for bookkeeping.
+        raw_measurements : list[np.ndarray] (range, bearing)
+            The original raw measurements corresponding to world_measurements
 
         Returns
         -------

@@ -1,5 +1,9 @@
 omegaconf
 numpy
 matplotlib
-gtsam
 lap
+tqdm
+scipy
+shapely
+# gtsam
+# visgeom # "https://github.com/tussedrotten/visgeom/archive/master.zip"

@@ -20,7 +20,6 @@ from data_loader import SLAMStep
 
 
 
-
 class FactorGraphSLAM:
     """Main SLAM estimator using factor graph."""
 
@@ -174,15 +173,17 @@ class FactorGraphSLAM:
         keys = [pose_pred_key]  # NOTE: order in which the keys are added is important
         keys += [L(id) for id in zbar_ids]   
 
-        # self.optimize_graph()  # ensure values are up to date before extracting covariance
+        self.optimize_graph()  # ensure values are up to date before extracting covariance
         # marginals = gtsam.Marginals(self.isam.getFactorsUnsafe(), self.values)
         # marginals = gtsam.Marginals(self.graph, self.values)
-        marginals = self.get_marginals_()
+        # marginals = self.get_marginals_()
 
         # Joint covariance for previous pose and local landmarks (in local frame)
         # covariance  = marginals.jointMarginalCovariance(keys).fullMatrix()
-        information = self.info_func(marginals, keys)
-        covariance = self.inverse_func(information)
+        # information = self.info_func(marginals, keys)
+        # covariance = self.inverse_func(information)
+
+        covariance = self.isam.jointMarginalCovariance(keys)
         # information = marginals.jointMarginalInformation(keys).fullMatrix()
         # covariance = np.linalg.inv(information)
         # print(covariance.shape)

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "master-thesis-slam"
+version = "0.1.0"
+description = "SLAM experiments and thesis code for NTNU TTK4900."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Ovar Skjevdal" },
+]
+dependencies = [
+  "lap",
+  "matplotlib",
+  "numpy",
+  "omegaconf",
+  "scipy",
+  "shapely",
+  "tqdm",
+  "visgeom @ https://github.com/tussedrotten/visgeom/archive/master.zip"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ipykernel",
+  "jupyter",
+  "ruff",
+]
+
+[project.scripts]
+run-real-slam = "run_real_SLAM:main"
+# run-sim-slam = "run_sim_SLAM:main"
+check-gtsam-install = "gtsam_diagnostics:main"
+
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = [
+  "association",
+  "config",
+  "data_loader",
+  "ekf_slam",
+  "factor_graph_slam",
+  "gtsam_diagnostics",
+  "jacobian",
+  "landmark_manager",
+  "result",
+  "run_real_SLAM",
+  "toy_example",
+  "visualization",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["models", "models.*", "plotting", "plotting.*", "simulation", "simulation.*", "utils", "utils.*"]

@@ -1,6 +1,7 @@
 name: example_config
 description: Example SLAM configuration for testing
 seed: 42
+
 simulation:
   dt: 0.1
   duration: 20.0
@@ -27,6 +28,7 @@ simulation:
   - 50.0
   max_sensor_range: 15.0
   sensor_fov_deg: 360.0
+
 inference:
   algorithm: isam2
   noise:
@@ -38,28 +40,30 @@ inference:
     x0_std: 0.05
     y0_std: 0.05
     theta0_std_deg: 3.0
-  init_pose:
+  prior_pose:
   - 0.0
   - 0.0
   - 0.0
-  dead_reckoning: false
-  association_type: jcbb
+  M: 2
+  N: 2
+  association_gate: 1.5
+  association_method: jcbb
   alpha_individual: 0.999
   alpha_joint: 0.9999
-  local_filtering_range: 30.0
+  range_gate: 90.0
+  fov_gate_deg: 360.0
   sensor_offset:
   - 0.0
   - 0.0
+
 visualization:
-  enabled: true
-  real_time: true
-  update_interval: 10
   figure_size:
   - 12
   - 8
   show_trajectory: true
   show_landmarks: true
-  show_uncertainty: true
+  show_dead_reckoning: true
+  show_uncertainty: false
   show_observations: false
   save_plots: false
   output_dir: ./results

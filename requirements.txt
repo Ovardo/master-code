@@ -1,9 +1,0 @@
-omegaconf
-numpy
-matplotlib
-lap
-tqdm
-scipy
-shapely
-# gtsam
-# visgeom # "https://github.com/tussedrotten/visgeom/archive/master.zip"

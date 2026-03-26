@@ -31,7 +31,7 @@ class NoiseConfig:
     y0_std: float = 0.05 # meters
     theta0_std_deg: float = 3.0  # degrees
 
-    def __post___init__(self):
+    def __post_init__(self):
         """Validate noise parameters."""
         for field_name, value in self.__dict__.items():
             if value <= 0:

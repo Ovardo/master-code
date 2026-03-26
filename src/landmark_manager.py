@@ -200,7 +200,8 @@ class TentativeLandmarkManager:
 
     def _extract_confirmed(self, current_step: int) -> list[TentativeLandmark]:
         """
-        Extract and remove tentative landmarks that satisfy confirmation logic.
+        Return tentative landmarks that satisfy confirmation logic and remove 
+        them from tentative landmarks.
         """
         confirmed: list[TentativeLandmark] = []
         remaining: list[TentativeLandmark] = []

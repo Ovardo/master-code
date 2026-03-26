@@ -2,7 +2,6 @@
 from pathlib import Path
 
 import gtsam
-import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
@@ -101,7 +100,7 @@ def main():
     # visualizer.create_estimates_video('videos/estimates.mp4', fps=5, dead_reckoning_poses=poses_dead_reckoning) 
 
     # visualizer.create_measurement_video_polar('measurements_polar.mp4', fps=5)
-    visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
+    # visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
 
 
     # fig, ax = visualizer.plot_final_result(slam, marginals, poses_dead_reckoning=poses_dead_reckoning, ax=ax)

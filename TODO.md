@@ -4,17 +4,22 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 
 ## Simulation And Data Pipeline
 
+- [ ] Add panel holoviz visualization.
 - [ ] Replace the remaining dict-based simulator output with typed step/event objects, similar to `SLAMStep`.
 - [ ] Introduce a timestamp-sorted event stream for simulated odometry and landmark measurements so the main loop can process them causally.
 - [ ] Implement `DynamicRobotSimulatorSE2` so simulations can be driven by control inputs instead of pre-defined poses.
 - [ ] Move the hard-coded lidar range filter in `VictoriaParkLoader` into configuration.
+- [ ] Save result as pickles dict
+  
 
 ## Association And Landmark Management
 
+- [ ] Add measurements function jacobian caluclation to gtsam python wrapper
 - [ ] Use `sensor_offset` consistently during prediction, association, and landmark initialization to avoid duplicate landmarks from frame mismatch.
 - [ ] Decide how ambiguous associations (`-2`) should be handled in `FactorGraphSLAM` instead of silently ignoring them.
 - [ ] Make the ambiguous-association threshold configurable instead of hard-coded.
 - [ ] Add a cleaner fallback path when no predicted landmarks survive gating.
+
 
 ## Numerics And Cleanup
 

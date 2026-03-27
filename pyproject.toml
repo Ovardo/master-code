@@ -45,10 +45,11 @@ py-modules = [
   "ekf_slam",
   "factor_graph_slam",
   "gtsam_diagnostics",
+  "history",
   "jacobian",
   "landmark_manager",
-  "result",
   "run_real_SLAM",
+  "slam_types",
   "toy_example",
   "visualization",
 ]

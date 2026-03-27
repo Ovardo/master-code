@@ -8,9 +8,11 @@ from tqdm import tqdm
 from config import load_config
 from data_loader import VictoriaParkLoader
 from factor_graph_slam import FactorGraphSLAM
+from history import SLAMHistory
+from slam_types import SLAMHistoryEntry
 from utils.utils_gtsam import pose2_to_array
 from utils.utils_victoria_park import odometry_func
-from visualization import SLAMHistory, SLAMVisualizer
+from visualization import SLAMVisualizer
 
 
 def main():
@@ -28,52 +30,39 @@ def main():
 
     history = SLAMHistory()
 
-    K = 10000 # max number of steps to process
+    K = 30000 # max number of steps to process
 
     # %% Run dead reckoning
     x_prev = gtsam.Pose2(*initial_pose) # IMPORTANT: gtsanm.Pose2(initial_pose) is different from gtsam.Pose2(*initial_pose)
     poses_dead_reckoning = [pose2_to_array(x_prev)]
 
-    for data_k in data_loader.iterate_steps(max_steps=K):
-        odo = data_k.odometry
+    for step_input in data_loader.iterate_steps(max_steps=K):
+        odo = step_input.odometry
         
-        # x_pred = x_prev.compose(gtsam.Pose2(*data_k.odometry))
+        # x_pred = x_prev.compose(gtsam.Pose2(*step_input.odometry))
         x_pred = x_prev.compose(odo)
         poses_dead_reckoning.append(pose2_to_array(x_pred))
         x_prev = x_pred
 
     poses_dead_reckoning = np.array(poses_dead_reckoning)
 
-    # from scipy.io import loadmat
-    # data_folder = Path(__file__).parents[1]
-    # mat_path = data_folder.joinpath('data/victoriaParkDataset.mat')
-    # data = loadmat(mat_path)
-    # U = data['controllerInput']
-    # X_dr = data['deadReckoning']
-    # X_gps = data['gpsLatLong']
-    # Z = data['measurements'][:,0]
 
     # %% Run SLAM 
-    k = 0
-    for data_k in tqdm(data_loader.iterate_steps(max_steps=K), total=K-1, desc="SLAM"):
-        
-        
-        # u = U[k]
-        # dt = 0.025
-        # odometery = gtsam.Pose2(odometry_func(u[0], u[1], dt))
-        # measurements = Z[k]
+    for step_input in tqdm(data_loader.iterate_steps(max_steps=K), total=K-1, desc="SLAM"):
 
-        # odometery = data_k.odometry
-        # measurements = data_k.measurements  
+        step_output = slam.process_step(step_input)
         
-        # result = slam.process_step(odometery, measurements)
+        if step_output is not None:
+            history_entry = SLAMHistoryEntry(
+                step_index=step_input.step_index,
+                step_input=step_input,
+                step_output=step_output,
+                reference=None,
+                dead_reckoning_poses=slam.get_poses_dr(),
+            )
+            history.add(history_entry)
+        
 
-        result = slam.process_step(data_k)
-        
-        if result is not None:
-            history.add(result)
-        
-        k += 1
 
 
     # %% Visualize final result

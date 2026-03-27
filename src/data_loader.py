@@ -3,46 +3,15 @@ Victoria Park dataset loader module.
 Handles loading and preprocessing of Victoria Park SLAM dataset.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
 import numpy as np
 from scipy.io import loadmat
 
+from slam_types import SLAMStepInput
 from utils.utils_math import ssa
-from utils.utils_victoria_park import detectTrees, odometry_func, odom_increment_and_jac_from_ve_alpha
-
-
-@dataclass
-class SLAMStep:
-    """
-    Synced data for SLAM step.
-    
-    Attributes
-    ----------
-    ve_dr : float
-        Vehicle speed from dead reckoning [m/s]
-    alpha_dr : float
-        Steering angle from dead reckoning [rad]
-    dt_dr : float
-        Time increment [s]
-    z_lsr : np.ndarray or None
-        Raw lidar ranges (361,) in meters, None if no laser at this step
-    odometry : np.ndarray
-        Computed odometry increment
-    measurements : np.ndarray
-        Processed tree measurements (N, 2) as [range, bearing]
-    t : float
-        Timestamp of this step [s]
-    """
-    ve_dr: float
-    alpha_dr: float
-    dt_dr: float
-    z_lsr: np.ndarray | None
-    odometry: np.ndarray
-    measurements: np.ndarray
-    t: float
+from utils.utils_victoria_park import detectTrees, odom_increment_and_jac_from_ve_alpha
 
 
 class VictoriaParkLoader:
@@ -106,7 +75,7 @@ class VictoriaParkLoader:
         self.t = self.T_dr[0] # time of last processed step (start with first dead reckoning timestamp)
     
 
-    def get_step(self, k_dr: int) -> SLAMStep:
+    def get_step(self, k_dr: int) -> SLAMStepInput:
         """
         Get processed data for dead step k.
         
@@ -117,7 +86,7 @@ class VictoriaParkLoader:
         
         Returns
         -------
-        SLAMStep
+        SLAMStepInput
             Processed step data including odometry and any measurements
         """
         if k_dr >= self.K_dr- 1:
@@ -149,14 +118,15 @@ class VictoriaParkLoader:
             meas = meas[meas[:, 0] <= 40] # TODO! 
     
             # Create step with accumulated odometry
-            step = SLAMStep(
+            step = SLAMStepInput(
+                step_index=k_dr,
+                timestamp=self.t,
                 ve_dr=ve_dr,
                 alpha_dr=alpha_dr,
                 dt_dr=dt_dr,
-                z_lsr = z_lsr,
+                z_lsr=z_lsr,
                 odometry=odo,
                 measurements=meas,
-                t=self.t
             )
    
             self.k_lsr += 1
@@ -171,19 +141,20 @@ class VictoriaParkLoader:
             # odo = odometry_func(vel, steer, dt)
             odo, J_odo = odom_increment_and_jac_from_ve_alpha(ve_dr, alpha_dr, dt_dr)
 
-            step = SLAMStep(
+            step = SLAMStepInput(
+                step_index=k_dr,
+                timestamp=self.t,
                 ve_dr=ve_dr,
                 alpha_dr=alpha_dr,
                 dt_dr=dt_dr,
-                z_lsr = None,
-                odometry = odo,
+                z_lsr=None,
+                odometry=odo,
                 measurements=np.empty((0, 2)),  
-                t=self.t
             )
         
         return step
     
-    def iterate_steps(self, max_steps: Optional[int] = None) -> Iterator[SLAMStep]:
+    def iterate_steps(self, max_steps: Optional[int] = None) -> Iterator[SLAMStepInput]:
         """
         Iterate through all SLAM steps.
         
@@ -194,7 +165,7 @@ class VictoriaParkLoader:
         
         Yields
         ------
-        SLAMStep
+        SLAMStepInput
             Data for each step
         """
         self._reset_state()
@@ -228,5 +199,4 @@ class VictoriaParkLoader:
     
     
    
-
 

@@ -8,7 +8,8 @@ from scipy.stats.distributions import chi2
 
 from association import NIS
 from config import VisualizationConfig
-from result import SLAMHistory
+from history import SLAMHistory
+from slam_types import AMBIGUOUS, UNASSOCIATED
 from utils.utils_plot import MultivariateNormalParameters, plot_ellipse
 
 
@@ -18,6 +19,11 @@ class SLAMVisualizer:
     def __init__(self, config: VisualizationConfig, history: SLAMHistory):
         self.cfg = config
         self.history = history
+
+    def _resolve_step_index(self, step: int) -> int:
+        if step == -1:
+            return self.history.latest_or_raise().step_index
+        return step
 
     # =====================================
     # OPTIMIZED PLOTTING FUNCTIONS
@@ -41,9 +47,10 @@ class SLAMVisualizer:
         else:
             show_plot = False
         
-        record = self.history.get_or_raise(step)
-        poses_est = record.poses  # (K, 3)
-        landmarks_est = record.landmarks  # (L, 2)
+        step_index = self._resolve_step_index(step)
+        entry = self.history.require(step_index)
+        poses_est = entry.step_output.estimate.robot_poses  # (K, 3)
+        landmarks_est = entry.step_output.estimate.landmark_positions  # (L, 2)
 
         # Plot trajectories and landmarks with single calls
         if len(poses_est) > 0:
@@ -51,68 +58,70 @@ class SLAMVisualizer:
                    label=r'$\hat{x}_{SLAM}$', linewidth=2)
         
         if len(landmarks_est) > 0:
-            # record.predicted_measurements_ids # TODO: highlight the local map (gated landmarks)
+            # entry.step_output.measurement_prediction.predicted_landmark_ids # TODO: highlight the local map (gated landmarks)
             ax.scatter(landmarks_est[:, 0], landmarks_est[:, 1], 
                       c='b', marker='o', s=50, label=r'$\hat{m}_{SLAM}$ (posteriori)')
 
         if plot_dead_reckoning:
-            poses_dr = record.poses_dr  # (K, 3)
-            ax.plot(poses_dr[:, 0], poses_dr[:, 1], 'k-', alpha=0.7, 
-                   label=r'$\hat{x}_{DR}$', linewidth=1)
+            poses_dr = entry.dead_reckoning_poses  # (K, 3)
+            if poses_dr is not None:
+                ax.plot(poses_dr[:, 0], poses_dr[:, 1], 'k-', alpha=0.7, 
+                       label=r'$\hat{x}_{DR}$', linewidth=1)
         
-        if plot_predicted_measurements:
-            z = record.predicted_measurements  # (L', 2) [range, bearing]            
+        if plot_predicted_measurements and entry.step_output.measurement_prediction.predicted_measurements is not None:
+            z = entry.step_output.measurement_prediction.predicted_measurements  # (L', 2) [range, bearing]
             
-            # Convert to Cartesian in sensor frame
-            r, b = z[:, 0], z[:, 1]
-            xy_body = np.column_stack([r * np.cos(b), r * np.sin(b)])  # (M, 2)
+            if len(z) > 0:
+                r, b = z[:, 0], z[:, 1]
+                xy_body = np.column_stack([r * np.cos(b), r * np.sin(b)])  # (M, 2)
 
-            last_pose = poses_est[-1]  # (x, y, theta)
-            x, y, theta = last_pose[0], last_pose[1], last_pose[2]
-            
-            # Rotate and translate to world frame
-            c, s = np.cos(theta), np.sin(theta)
-            R_w_b = np.array([[c, -s], [s, c]])  # (2, 2)
-            xy_world = xy_body @ R_w_b.T + np.array([x, y])  # (M, 2)
-            
-            ax.scatter(xy_world[:, 0], xy_world[:, 1], marker='o', c='g', s=50, alpha=0.5, 
-                  label=r'$\check{m}_{SLAM}$ (priori)', zorder=2)
+                predicted_pose = entry.step_output.estimate.predicted_robot_pose
+                if predicted_pose is None:
+                    predicted_pose = poses_est[-1]
+
+                x, y, theta = predicted_pose[0], predicted_pose[1], predicted_pose[2]
+
+                c, s = np.cos(theta), np.sin(theta)
+                R_w_b = np.array([[c, -s], [s, c]])  # (2, 2)
+                xy_world = xy_body @ R_w_b.T + np.array([x, y])  # (M, 2)
+
+                ax.scatter(xy_world[:, 0], xy_world[:, 1], marker='o', c='g', s=50, alpha=0.5,
+                      label=r'$\check{m}_{SLAM}$ (priori)', zorder=2)
         
-        if plot_measurements:
-            z = record.measurements  # (M, 2) [range, bearing]
+        if plot_measurements and entry.step_output.measurement_prediction.observed_measurements is not None:
+            z = entry.step_output.measurement_prediction.observed_measurements  # (M, 2) [range, bearing]
 
-            # Convert to Cartesian in sensor frame
-            r, b = z[:, 0], z[:, 1]
-            xy_body = np.column_stack([r * np.cos(b), r * np.sin(b)])  # (M, 2)
+            if len(z) > 0:
+                r, b = z[:, 0], z[:, 1]
+                xy_body = np.column_stack([r * np.cos(b), r * np.sin(b)])  # (M, 2)
 
-            last_pose = poses_est[-1]  # (x, y, theta)
-            x, y, theta = last_pose[0], last_pose[1], last_pose[2]
-            
-            # Rotate and translate to world frame
-            c, s = np.cos(theta), np.sin(theta)
-            R_w_b = np.array([[c, -s], [s, c]])  # (2, 2)
-            xy_world = xy_body @ R_w_b.T + np.array([x, y])  # (M, 2)
-            
-            ax.scatter(xy_world[:, 0], xy_world[:, 1], marker='x', c='r', s=50, 
-                  label=r'$z$', zorder=3)
+                last_pose = poses_est[-1]  # (x, y, theta)
+                x, y, theta = last_pose[0], last_pose[1], last_pose[2]
+
+                c, s = np.cos(theta), np.sin(theta)
+                R_w_b = np.array([[c, -s], [s, c]])  # (2, 2)
+                xy_world = xy_body @ R_w_b.T + np.array([x, y])  # (M, 2)
+
+                ax.scatter(xy_world[:, 0], xy_world[:, 1], marker='x', c='r', s=50,
+                      label=r'$z$', zorder=3)
 
             
         if plot_covariances:
-            if record.poses_cov is None or record.landmarks_cov is None:
-                raise ValueError(f"Covariances not available for step={step}")
+            if entry.step_output.estimate.robot_pose_covariances is None or entry.step_output.estimate.landmark_covariances is None:
+                raise ValueError(f"Covariances not available for step={step_index}")
             
             # Plot pose covariances
-            for pose, cov in zip(poses_est, record.poses_cov):
+            for pose, cov in zip(poses_est, entry.step_output.estimate.robot_pose_covariances):
                 dist = MultivariateNormalParameters(pose[:2], cov[:2,:2])
                 plot_ellipse(ax, dist, fill_alpha=0.1, fill_color='b')
             
             # Plot landmark covariances
-            for lm, cov in zip(landmarks_est, record.landmarks_cov):
+            for lm, cov in zip(landmarks_est, entry.step_output.estimate.landmark_covariances):
                 dist = MultivariateNormalParameters(lm, cov)
                 plot_ellipse(ax, dist, fill_alpha=0.1, fill_color='r')
         
         if ground_truth_poses is not None and len(ground_truth_poses) > 0:
-            gt_poses = ground_truth_poses[:step+1]
+            gt_poses = ground_truth_poses[:step_index+1]
             ax.plot(gt_poses[:, 0], gt_poses[:, 1], 'g--', alpha=0.7, 
                    label=r'$x_{GT}$', linewidth=2)
 
@@ -121,7 +130,7 @@ class SLAMVisualizer:
                       c='m', marker='D', s=50, label=r'$m_{GT}$')
         
         ax.legend()
-        ax.set_title(f"Step: {step}, Num landmarks: {len(landmarks_est)}")
+        ax.set_title(f"Step: {step_index}, Num landmarks: {len(landmarks_est)}")
         ax.set_xlabel("x [m]")
         ax.set_ylabel("y [m]")
         ax.axis("equal")
@@ -140,15 +149,16 @@ class SLAMVisualizer:
         else:
             show_plot = False
         
-        record = self.history.get_or_raise(step)
+        step_index = self._resolve_step_index(step)
+        entry = self.history.require(step_index)
         
-        meas = record.measurements  # (M, 2) [range, bearing]
-        zbars = record.predicted_measurements  # (L', 2)
-        zbars_ids = record.predicted_measurements_ids  # (L',)
-        associations_idx = record.associations_idx  # (M,)
+        meas = entry.step_output.measurement_prediction.observed_measurements  # (M, 2) [range, bearing]
+        zbars = entry.step_output.measurement_prediction.predicted_measurements  # (L', 2)
+        zbars_ids = entry.step_output.measurement_prediction.predicted_landmark_ids  # (L',)
+        associations_idx = entry.step_output.associations.prediction_indices_by_measurement  # (M,)
 
         # --- Predicted measurements (vectorized) ---
-        if len(zbars) > 0:
+        if zbars is not None and len(zbars) > 0:
             ax.scatter(zbars[:, 0], zbars[:, 1], marker='o', c='b', s=50, 
                     label="predicted", zorder=1)
             # Text labels still need loop
@@ -156,10 +166,10 @@ class SLAMVisualizer:
                 ax.text(z[0], z[1], str(lm_id), fontsize=8, alpha=0.6)
         
         # --- Measured points (separate masks for control) ---
-        if len(meas) > 0:
+        if meas is not None and associations_idx is not None and len(meas) > 0:
             # Create masks for each association type
-            mask_unassoc = associations_idx == -1
-            mask_ambig = associations_idx == -2
+            mask_unassoc = associations_idx == UNASSOCIATED
+            mask_ambig = associations_idx == AMBIGUOUS
             mask_assoc = associations_idx >= 0
             
             # Plot in order: unassociated (bottom), ambiguous, associated (top)
@@ -187,7 +197,7 @@ class SLAMVisualizer:
                 ax.add_collection(lc)
         
         ax.legend(loc='best')
-        ax.set_title(f"Measurement space polar (step {step})")
+        ax.set_title(f"Measurement space polar (step {step_index})")
         ax.set_xlabel("range [m]")
         ax.set_ylabel("bearing [rad]")
         ax.grid(True, alpha=0.3)
@@ -205,14 +215,24 @@ class SLAMVisualizer:
         else:
             show_plot = False
         
-        record = self.history.get_or_raise(step)
+        step_index = self._resolve_step_index(step)
+        entry = self.history.require(step_index)
         
-        measurements = record.measurements  # (M, 2) [range, bearing]
-        predicted_measurements = record.predicted_measurements  # (L, 2)
-        predicted_measurements_ids = record.predicted_measurements_ids  # (L,)
-        associations_idx = record.associations_idx  # (M,)
+        measurements = entry.step_output.measurement_prediction.observed_measurements  # (M, 2) [range, bearing]
+        predicted_measurements = entry.step_output.measurement_prediction.predicted_measurements  # (L, 2)
+        predicted_measurements_ids = entry.step_output.measurement_prediction.predicted_landmark_ids  # (L,)
+        associations_idx = entry.step_output.associations.prediction_indices_by_measurement  # (M,)
         
         # --- Vectorized coordinate conversion ---
+        if measurements is None:
+            measurements = np.empty((0, 2))
+        if predicted_measurements is None:
+            predicted_measurements = np.empty((0, 2))
+        if predicted_measurements_ids is None:
+            predicted_measurements_ids = np.empty((0,), dtype=int)
+        if associations_idx is None:
+            associations_idx = np.empty((0,), dtype=int)
+
         r, b = measurements[:, 0], measurements[:, 1]
         meas_xy = np.column_stack([-r * np.sin(b), r * np.cos(b)])
         
@@ -244,8 +264,8 @@ class SLAMVisualizer:
         # --- Measured points (separate masks for control over plotting order) ---
         if len(meas_xy) > 0:
             # Create masks for each association type
-            mask_unassoc = associations_idx == -1
-            mask_ambig = associations_idx == -2
+            mask_unassoc = associations_idx == UNASSOCIATED
+            mask_ambig = associations_idx == AMBIGUOUS
             mask_assoc = associations_idx >= 0
             
             # Plot in order: unassociated (bottom), ambiguous, associated (top)
@@ -278,7 +298,7 @@ class SLAMVisualizer:
         ax.axhline(0, color='gray', linewidth=0.5)
         ax.axvline(0, color='gray', linewidth=0.5)
         ax.legend(loc='best')
-        ax.set_title(f"Measurement space cartesian (step {step})")
+        ax.set_title(f"Measurement space cartesian (step {step_index})")
         ax.set_xlabel("x [m]")
         ax.set_ylabel("y [m]")
         ax.grid(True, alpha=0.3)
@@ -317,7 +337,7 @@ class SLAMVisualizer:
             **plot_kwargs: Additional kwargs passed to plot_func
         """
         if end_step is None:
-            end_step = len(self.history) - 1
+            end_step = self.history.latest_or_raise().step_index
         
         steps = range(start_step, end_step + 1)
         
@@ -402,7 +422,7 @@ class SLAMVisualizer:
             layout: 'horizontal' for side-by-side, 'vertical' for stacked
         """
         if end_step is None:
-            end_step = len(self.history) - 1
+            end_step = self.history.latest_or_raise().step_index
         
         steps = range(start_step, end_step + 1)
         
@@ -447,7 +467,7 @@ class SLAMVisualizer:
         - Right: Cartesian measurements
         """
         if end_step is None:
-            end_step = len(self.history) - 1
+            end_step = self.history.latest_or_raise().step_index
         
         steps = range(start_step, end_step + 1)
         

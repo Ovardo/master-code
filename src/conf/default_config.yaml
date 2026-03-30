@@ -1,7 +1,7 @@
 name: example_config
 description: Example SLAM configuration for testing
 seed: 42
-
+profilinfg_enabled: false
 simulation:
   dt: 0.1
   duration: 20.0
@@ -17,7 +17,7 @@ simulation:
     range_std: 0.2
     x0_std: 0.05
     y0_std: 0.05
-    theta0_std_deg: 3.0
+    theta0_std_deg: 1.0
   path_type: circle
   num_poses: 10
   num_landmarks: 15
@@ -28,9 +28,12 @@ simulation:
   - 50.0
   max_sensor_range: 15.0
   sensor_fov_deg: 360.0
-
 inference:
   algorithm: isam2
+  prior_pose:
+  - 0.0
+  - 0.0
+  - 0.0
   noise:
     x_std: 0.1
     y_std: 0.1
@@ -39,32 +42,17 @@ inference:
     range_std: 0.2
     x0_std: 0.05
     y0_std: 0.05
-    theta0_std_deg: 3.0
-  prior_pose:
-  - 0.0
-  - 0.0
-  - 0.0
-  M: 2
-  N: 2
-  association_gate: 1.5
-  association_method: jcbb
-  alpha_individual: 0.999
-  alpha_joint: 0.9999
-  range_gate: 90.0
-  fov_gate_deg: 360.0
-  sensor_offset:
-  - 0.0
-  - 0.0
-
+    theta0_std_deg: 1.0
+  landmark_manager:
+    M: 3
+    'N': 4
+    gate: 0.1
+  association:
+    method: jcbb
+    alpha_individual: 0.999
+    alpha_joint: 0.9999
+    range_gate: 50.0
+    fov_gate_deg: 250.0
 visualization:
-  figure_size:
-  - 12
-  - 8
-  show_trajectory: true
-  show_landmarks: true
-  show_dead_reckoning: true
-  show_uncertainty: false
-  show_observations: false
-  save_plots: false
   output_dir: ./results
-  save_format: png
+  save_format: svg

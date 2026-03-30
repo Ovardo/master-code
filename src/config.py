@@ -11,26 +11,32 @@ from typing import Optional
 import numpy as np
 from omegaconf import OmegaConf
 
-# TODO: default values of classes gets overwritten by yaml file, this is not explicitly stated and may cause confusion for students...
 
 @dataclass
 class NoiseConfig:
-    """Noise paramters for simulation and inference."""
+    """Noise paramters.
+    
+    Attributes:
+        x_std (float): Standard deviation of process noise in x [m].
+        y_std (float): Standard deviation of process noise in y [m].
+        theta_std_deg (float): Standard deviation of process noise in orientation [degrees].
+        bearing_std_deg (float): Standard deviation of measurement noise in bearing [degrees].
+        range_std (float): Standard deviation of measurement noise in range [m].
+        x0_std (float): Standard deviation of initial x position [m].
+        y0_std (float): Standard deviation of initial y position [m].
+        theta0_std_deg (float): Standard deviation of initial orientation [degrees].
+    """
 
-    # Process noise (odometry)
-    x_std: float = 0.1 # meters
-    y_std: float = 0.1 # meters
-    theta_std_deg: float = 0.1 # degrees
 
-    # Measurement noise 
-    bearing_std_deg: float = 1.0  # degrees
-    range_std: float = 0.2 # meters
-
-    # Initial state uncertainty
-    x0_std: float = 0.05 # meters
-    y0_std: float = 0.05 # meters
-    theta0_std_deg: float = 3.0  # degrees
-
+    x_std: float = 0.1
+    y_std: float = 0.1
+    theta_std_deg: float = 0.1
+    bearing_std_deg: float = 1.0
+    range_std: float = 0.2
+    x0_std: float = 0.05
+    y0_std: float = 0.05
+    theta0_std_deg: float = 1.0
+ 
     def __post_init__(self):
         """Validate noise parameters."""
         for field_name, value in self.__dict__.items():
@@ -54,45 +60,144 @@ class NoiseConfig:
 
     @property
     def odometry_std(self):
-        """Return process noise vector (3,)."""
+        """Return process noise vector (3,) [x, y, theta]."""
         return np.array([self.x_std, self.y_std, self.theta_std_rad], dtype=np.float64)
 
     @property
     def measurement_std(self):
-        """Return measurement noise vector (2,)."""
+        """Return measurement noise vector (2,) [bearing, range]."""
         return np.array([self.bearing_std_rad, self.range_std], dtype=np.float64)
 
     @property
     def prior_std(self):
-        """Return initial state noise vector (3,)."""
+        """Return initial state noise vector (3,) [x0, y0, theta0]."""
         return np.array([self.x0_std, self.y0_std, self.theta0_std_rad], dtype=np.float64)
 
+      
+@dataclass
+class LandmarkManagerConfig:
+    """Configuration for landmark management in SLAM.
+    
+    Attributes:
+        M (int): Hits needed to confirm a landmark.
+        N (int): Max lifetime (in steps) of tentative landmark.
+        gate (float): Euclidean distance threshold for associating unassociated 
+            measurements to existing tentative landmarks.
+    """
+    M: int = 3
+    N: int = 4
+    gate: float = 0.1
+
+    def __post_init__(self):
+        if self.M <= 0:
+            raise ValueError(f"M must be positive, got {self.M}")
+        if self.N <= 0:
+            raise ValueError(f"N must be positive, got {self.N}")
+        if self.M > self.N:
+            raise ValueError(f"M must be <= N, got M={self.M} and N={self.N}")
+        if self.gate <= 0:
+            raise ValueError(f"gate must be positive, got {self.gate}")
+
+@dataclass
+class AssociationConfig:
+    """Data association configuration for landmark matching.
+    
+    Attributes:
+        method (str): Association method. Options: "gt" (only for sim), "jcbb", "ml", "nn", "cnn".
+        alpha_individual (float): Confidence level for individual compatibility test.
+        alpha_joint (float): Confidence level for joint compatibility test.
+        range_gate (float): Local feature filtering radius [m].
+        fov_gate_deg (float): Local feature filtering field of view [deg].
+    """
+    method: str = "jcbb"
+    alpha_individual: float = 0.999
+    alpha_joint: float = 0.9999
+    range_gate: float = 50.0
+    fov_gate_deg: float = 250.0
+
+    def __post_init__(self):
+        methods_options = ["jcbb", "ml"] # TODO: include "gt" and "nn"
+        if self.method not in methods_options:
+            raise ValueError(f"Invalid association_type {self.method}, must be one of {methods_options}")
+        if not (0 < self.alpha_individual < 1):
+            raise ValueError(f"alpha_individual must be in (0, 1), got {self.alpha_individual}")
+        if not (0 < self.alpha_joint < 1):
+            raise ValueError(f"alpha_joint must be in (0, 1), got {self.alpha_joint}")
+        if self.range_gate <= 0:
+            raise ValueError(f"local_filtering_range must be positive, got {self.range_gate}")
+        if not (0 <= self.fov_gate_deg <= 360):
+            raise ValueError(f"fov_gate_deg must be in [0, 360], got {self.fov_gate_deg}")
+        
+
+@dataclass
+class InferenceConfig:
+    """Inference parameters.
+    
+    Attributes:
+        algorithm (str): The inference algorithm to use. Must be one of 'ekf', 'isam2', or 'batch'.
+            Defaults to 'isam2'.
+        prior_pose (tuple[float, float, float]): Initial pose of the robot as (x, y, theta).
+            Defaults to (0.0, 0.0, 0.0).
+        noise (NoiseConfig): Configuration for noise parameters.
+        landmark_manager (LandmarkManagerConfig): Configuration for landmark management.
+        association (AssociationConfig): Configuration for data association.
+    """
+    algorithm: str = 'isam2' 
+    prior_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    noise: NoiseConfig = field(default_factory=NoiseConfig)
+    landmark_manager: LandmarkManagerConfig = field(default_factory=LandmarkManagerConfig)
+    association: AssociationConfig = field(default_factory=AssociationConfig)
+
+    def __post_init__(self):
+        """Validate inference parameters."""
+        algorithm_options = ["ekf", "isam2", "batch"]
+        if self.algorithm not in algorithm_options:
+            raise ValueError(f"Invalid algorithm {self.algorithm}, must be one of 'ekf', 'isam2', 'batch'")
+        
+
+@dataclass
+class VisualizationConfig:
+    """Visualization and plotting settings.
+    
+    Attributes:
+        output_dir (str): Directory path for saving output files. Defaults to "./results".
+        save_format (str): Output file format for saved plots. Defaults to "svg".
+            Must be one of 'png', 'pdf', or 'svg'.
+    """
+
+    output_dir: str = "./results"
+    save_format: str = "svg"  # png, pdf, svg
 
 
 @dataclass
 class SimulationConfig:
-    """Simulation paramters."""
+    """Simulation parameters.
+    
+    Configuration for robot simulation including timing, trajectory, landmarks, and sensor settings.
+    
+    Attributes:
+        dt (float): Time step in seconds. Must be positive.
+        duration (float): Total simulation duration in seconds. Must be positive.
+        init_pose (tuple[float, float, float]): Robot initial pose (x, y, theta). Units: [m, m, deg].
+        noise (NoiseConfig): Noise configuration for simulation.
+        path_type (str): Type of trajectory path.
+        num_poses (int): Number of poses in trajectory. Must be positive.
+        num_landmarks (int): Number of landmarks to simulate. Must be positive.
+        landmark_bounds (tuple[float, float, float, float]): Landmark spatial bounds (x_min, x_max, y_min, y_max).
+        max_sensor_range (float): Maximum sensor range in meters. Must be positive.
+        sensor_fov_deg (float): Sensor field of view in degrees. Must be in (0, 360].
+    """
 
     # Time settings
-    dt: float = 0.1  # time step in seconds
-    duration: float = 20.0  # total simulation duration in seconds
-
-    # Robot initial pose
-    init_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)  # (x, y, theta) in meters and radians
-
-    # Noise configuration
+    dt: float = 0.1 # time step in seconds
+    duration: float = 20.0 # total simulation duration in seconds
+    init_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)
     noise: NoiseConfig = field(default_factory=NoiseConfig)
-
-    # Trajectory settings
-    path_type: str = 'circle'
+    path_type: str = "circle"
     num_poses: int = 10
-
-    # Landmark settings
     num_landmarks: int = 15
-    landmark_bounds: tuple[float, float, float, float] = (-50.0, 50.0, -50.0, 50.0) # (x_min, x_max, y_min, y_max)
-
-    # Sensor settings
-    max_sensor_range: float = 15.0   # meters
+    landmark_bounds: tuple[float, float, float, float] = (-50.0, 50.0, -50.0, 50.0)
+    max_sensor_range: float = 15.0  # meters
     sensor_fov_deg: float = 360.0  # degrees
 
     def __post_init__(self):
@@ -115,84 +220,6 @@ class SimulationConfig:
         if not (0 < self.sensor_fov_deg <= 360):
             msg = f"sensor_fov_deg must be in (0, 360], got {self.sensor_fov_deg}"
             raise ValueError(msg)
-      
-
-@dataclass
-class InferenceConfig:
-    """Inference parameters."""
-
-    # Algorithm selection
-    algorithm: str = "isam2"  # Options: "ekf", "isam2", "batch"
-
-    # EKF-specific settings
-
-    # Noise model (can differ from simulation)
-    noise: NoiseConfig = field(default_factory=NoiseConfig)
-
-    prior_pose: tuple[float, float, float] = (0.0, 0.0, 0.0)
-
-    # Landmark management settings
-    M: int = 2  # hits to confirm a landmark
-    N: int = 2  # time steps to keep a tentative landmark
-    association_gate: float = 1.5  # ecludian distance threshold for associating unassociated measurements to existing tentative landmarks
-    # max_missed_steps: int = 4  # max consecutive missed steps before pruning a tentative landmark
-    
-    # Data association settings
-    association_method: str = "jcbb"  # "ground_truth", "jcbb", "maximum_likelihood", "neareast_neighbour", "Constrained Nearnest Neighboor data association
-    alpha_individual: float = 0.999  # confidence levels for individual compatibility test
-    alpha_joint: float = 0.9999  # confidence levels for joint compatibility test
-
-    range_gate: float = 90  # local feature filtering radius for data association (should be larger than lidar range)
-    fov_gate_deg: float = 360.0  # local feature filtering FOV for data association (degrees)
-    
-    
-    sensor_offset: tuple[float, float] = (0.0, 0.0)  # (dx, dy) offset of sensor wrt robot body frame NOTE: not used
-
-    def __post_init__(self):
-        """Validate inference parameters."""
-        
-        algorithm_options = ["ekf", "isam2", "batch"]
-        if self.algorithm not in algorithm_options:
-            raise ValueError(f"Invalid algorithm {self.algorithm}, must be one of 'ekf', 'isam2', 'batch'")
-        
-        association_options = ["jcbb", "ml"]
-        if self.association_method not in association_options:
-            raise ValueError(f"Invalid association_type {self.association_method}, must be one of {association_options}")
-       
-        if not (0 < self.alpha_individual < 1):
-            raise ValueError(f"alpha_individual must be in (0, 1), got {self.alpha_individual}")
-        if not (0 < self.alpha_joint < 1):
-            raise ValueError(f"alpha_joint must be in (0, 1), got {self.alpha_joint}")
-        if self.range_gate <= 0:
-            raise ValueError(f"local_filtering_range must be positive, got {self.range_gate}")
-        if not (0 <= self.fov_gate_deg <= 360):
-            raise ValueError(f"fov_gate_deg must be in [0, 360], got {self.fov_gate_deg}")
-        
-
-@dataclass
-class VisualizationConfig:
-    """Visualization and plotting settings."""
-
-    # enabled: bool = True
-    # real_time: bool = True  # Update plot during simulation
-    # update_interval: int = 10  # Update every N steps
-
-    # Estimates plot settings
-    figure_size: tuple[int, int] = (12, 8)
-    show_trajectory: bool = True
-    show_landmarks: bool = True
-    show_dead_reckoning: bool = True
-    show_uncertainty: bool = False
-    show_observations: bool = False
-
-    # Measurements plot settings
-
-    save_plots: bool = False
-    output_dir: str = "./results"
-    save_format: str = "png"  # png, pdf, svg
-
-    def __post_init__(self):
-        """Validate visualization parameters."""
 
 
 
@@ -201,14 +228,23 @@ class VisualizationConfig:
 # -------------------------------
 @dataclass
 class SLAMConfig:
-    """Main configuration class for SLAM experiment."""
+    """Main configuration class for SLAM experiment.
+
+    Attributes:
+        name: Experiment name identifier. Defaults to "default_experiment".
+        description: Experiment description. Defaults to "SLAM experiment configuration".
+        seed: Random seed for reproducibility. Defaults to 42. None for non-deterministic.
+        profilinfg_enabled: Whether to enable timing profiling. Defaults to False.
+        simulation: Simulation configuration parameters.
+        inference: Inference configuration parameters.
+        visualization: Visualization configuration parameters.
+    """
     
     # Experiment metadata
     name: str = "default_experiment"
     description: str = "SLAM experiment configuration"
-    seed: Optional[int] = 42  # random seed for reproducibility
-
-    # Sub-configurations
+    seed: Optional[int] = 42 # random seed for reproducibility
+    profilinfg_enabled: bool = False  # whether to enable timing profiling
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
@@ -217,27 +253,23 @@ class SLAMConfig:
         """Validate top-level configuration."""
         if self.seed is not None and self.seed < 0:
             raise ValueError(f"seed must be non-negative or None, got {self.seed}")
-        if self.inference.range_gate < self.simulation.max_sensor_range:
-            warnings.warn(f"range_gate should be larger than max_sensor_range for effective data association, got {self.inference.range_gate} and {self.simulation.max_sensor_range}")
+        if self.inference.association.range_gate < self.simulation.max_sensor_range:
+            warnings.warn(
+                "range_gate should be larger than max_sensor_range for effective "
+                f"data association, got {self.inference.association.range_gate} "
+                f"and {self.simulation.max_sensor_range}"
+            )
 
     def summary(self) -> str: # TODO: adjust
         """Return a human-readable summary of the configuration."""
         lines = [
-            f"Experiment Name: {self.name}",
+            f"SLAM Configuration: {self.name}"
             f"Description: {self.description}",
-            f"Random Seed: {self.seed}",
-            "Simulation Config:",
-            "Inference Config:",
-            f"  Algorithm: {self.inference.algorithm}",
-            f"  Data Association Type: {self.inference.association_method}",
-            f"  Alpha Individual: {self.inference.alpha_individual}",
-            f"  Alpha Joint: {self.inference.alpha_joint}",
-            f"  Local Filtering Range: {self.inference.range_gate} m",
-            "Visualization Config:",
-            f"  Output Directory: {self.visualization.output_dir}",
-            f"  Save Format: {self.visualization.save_format}",
+            f"Algorithm: {self.inference.algorithm}",
+            f"Association method: {self.inference.association.method}",
         ]
         return "\n".join(lines)
+
 
 
 def load_config(config_path: str) -> SLAMConfig:
@@ -270,6 +302,7 @@ def load_config(config_path: str) -> SLAMConfig:
     )
 
     return config  # type: ignore
+
 
 def save_config(config: SLAMConfig, output_path: str) -> None:
     """
@@ -326,15 +359,13 @@ if __name__ == "__main__":
     print("\n" + "="*50 + "\n")
     
     # Save to YAML
-    save_config(default_config, "src/conf/sandbox/default_config.yaml")
+    save_config(default_config, "src/conf/default_config.yaml")
     
     # Load it back
-    loaded_config = load_config("src/conf/sandbox/default_config.yaml")
+    loaded_config = load_config("src/conf/default_config.yaml")
     print("Successfully loaded configuration!")
     print(f"Name: {loaded_config.name}")
     print(f"Algorithm: {loaded_config.inference.algorithm}")
    
-
-
 
 

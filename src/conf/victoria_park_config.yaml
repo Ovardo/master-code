@@ -11,6 +11,13 @@ simulation:
   - 0.0
   - 0.0
 
+  # num_landmarks: 15
+  # landmark_bounds:
+  # - -50.0
+  # - 50.0
+  # - -50.0
+  # - 50.0
+
   noise:
     x_std: 0.1
     y_std: 0.1
@@ -21,37 +28,24 @@ simulation:
     y0_std: 0.05
     theta0_std_deg: 3.0
 
-  # path_type: circle
-  # num_poses: 10
-
-  # num_landmarks: 15
-  # landmark_bounds:
-  # - -50.0
-  # - 50.0
-  # - -50.0
-  # - 50.0
-
   max_sensor_range: 15.0
   sensor_fov_deg: 360.0
 
 inference:
-
   algorithm: isam2 # "isam2", "batch"
-
   prior_pose:
   - 0.0
   - 0.0
-  - 0.0
-      
+  - 0.0 
   noise:
-    x_std: 0.05 # 0.1
-    y_std: 0.05 # 0.1
-    theta_std_deg: 0.1 # 0.2
+    x_std: 0.05 
+    y_std: 0.05 
+    theta_std_deg: 0.1 
     bearing_std_deg: 0.5   
-    range_std: 0.2 # 0.2
-    x0_std: 0.001 # 0.05
-    y0_std: 0.001 # 0.05
-    theta0_std_deg: 0.005 #0.5
+    range_std: 0.2 
+    x0_std: 0.001 
+    y0_std: 0.001 
+    theta0_std_deg: 0.005
 
   M: 3 # hits to confirm a landmark
   N: 4 # time steps to keep a tentative landmark
@@ -60,7 +54,6 @@ inference:
   association_method: "jcbb" # "jcbb ("maximum_likelihood" & "ground_truth" to be implemented)
   alpha_individual: 0.9999
   alpha_joint: 0.99999
-
   range_gate: 45 
   fov_gate_deg: 220.0
 
@@ -68,17 +61,75 @@ inference:
   - 3.78
   - 0.5
 
-visualization: # not used? 
-  # enabled: true
-  # real_time: true
-  # update_interval: 10
-  figure_size:
-  - 12
-  - 8
-  show_trajectory: true
-  show_landmarks: true
-  show_uncertainty: true
-  show_observations: false
-  save_plots: false
-  output_dir: ./results
-  save_format: png
+visualization: # not used
+
+
+
+
+
+
+
+
+
+
+
+name: example_config
+description: Example SLAM configuration for testing
+seed: 42
+
+# SIMULATION PARAMETERS
+simulation.dt: 0.1
+simulation.duration: 20.0
+simulation.init_pose:
+  - 0.0
+  - 0.0
+  - 0.0
+simulation.num_landmarks: 15
+simulation.landmark_bounds:
+  - -50.0
+  - 50.0
+  - -50.0
+  - 50.0
+simulation.max_sensor_range: 15.0
+simulation.sensor_fov_deg: 360.0
+
+simulation.noise.x_std: 0.1
+simulation.noise.y_std: 0.1
+simulation.noise.theta_std_deg: 0.1
+simulation.noise.x0_std: 0.05
+simulation.noise.y0_std: 0.05
+simulation.noise.theta0_std_deg: 3.0
+simulation.noise.bearing_std_deg: 1.0
+simulation.noise.range_std: 0.4
+
+# INFERENCE PARAMETERS
+inference.algorithm: isam2 # "isam2", "batch"
+inference.prior_pose:
+  - 0.0
+  - 0.0
+  - 0.0
+inference.sensor_offset: # not used
+  - 3.78
+  - 0.5
+
+inference.noise.x0_std: 0.001 # 0.05
+inference.noise.y0_std: 0.001 # 0.05
+inference.noise.theta0_std_deg: 0.005 #0.5
+inference.noise.x_std: 0.05 # 0.1
+inference.noise.y_std: 0.05 # 0.1
+inference.noise.theta_std_deg: 0.1 # 0.2
+inference.noise.bearing_std_deg: 0.5   
+inference.noise.range_std: 0.2 # 0.2
+
+inference.landmark_manager:M: 3 # hits to confirm a landmark
+inference.landmark_manager:N: 4 # time steps to keep a tentative landmark
+inference.landmark_manager.association_gate: 0.05 # ecludian distance threshold
+
+inference.assocation.method: "jcbb" # "jcbb ("maximum_likelihood" & "ground_truth" to be implemented)
+inference.association.alpha_individual: 0.9999
+inference.association.alpha_joint: 0.99999
+inference.association.range_gate: 45 
+inference.association.fov_gate_deg: 220.0
+
+
+visualization: # not used

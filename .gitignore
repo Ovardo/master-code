@@ -2,6 +2,7 @@
 .DS_Store
 
 videos/*
+results/*
 !videos/.gitkeep
 
 # Byte-compiled / optimized / DLL files

@@ -7,14 +7,14 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
 
-from config import InferenceConfig
+from config import AssociationConfig
 from utils import utils_math
 
 
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
 class Associator:
-    def __init__(self, cfg: InferenceConfig):
+    def __init__(self, cfg: AssociationConfig):
         self.cfg = cfg
 
     def associate(self, z: np.ndarray, zbar: np.ndarray, innovation_covariance: np.ndarray) -> np.ndarray:
@@ -33,11 +33,11 @@ class Associator:
         -------
         np.ndarray, shape=(M,)
             Association vector with elements:
-            - \>=0 for index into zbar
+            - >=0 for index into zbar
             - -1 for unassociated (new landmark or outlier)
             - -2 for ambiguous association (unsure if outlier/new landmark or valid match)
         """
-        method = self.cfg.association_method
+        method = self.cfg.method
 
         if method == 'jcbb':
             associations = JCBB_assocation(z, zbar, innovation_covariance, self.cfg.alpha_individual, self.cfg.alpha_joint)
@@ -45,8 +45,10 @@ class Associator:
             associations = ML_association(z, zbar, innovation_covariance, self.cfg.alpha_individual)
         elif method == 'gt':
             pass # to be implemented
+        elif method == 'nn':
+            pass # to be implemented
         else:
-            raise ValueError(f"Unknown association method: {self.cfg.association_method}")
+            raise ValueError(f"Unknown association method: {self.cfg.method}")
        
         return associations
     
@@ -350,4 +352,3 @@ def NIS(z, zbar, S, a):
 
 def num_associations(array):
     return np.count_nonzero(array > -1)
-

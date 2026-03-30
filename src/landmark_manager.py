@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from config import LandmarkManagerConfig
+
 
 @dataclass
 class SupportingObservation:
@@ -97,18 +99,16 @@ class TentativeLandmarkManager:
       4. Stale tentative landmarks are pruned.
     """
 
-    def __init__(
-        self,
-        M: int,
-        N: int,
-        association_gate: float,
-    ) -> None:
-        if M > N:
-            raise ValueError("M must be <= N")
+    def __init__(self, cfg: LandmarkManagerConfig) -> None:
+        
+        assert cfg.M > 0, "M must be > 0"
+        assert cfg.N > 0, "N must be > 0"
+        assert cfg.M <= cfg.N, "M must be <= N"
+        assert cfg.gate > 0, "association_gate must be > 0"
 
-        self.M = M
-        self.N = N
-        self.association_gate = association_gate
+        self.M = cfg.M
+        self.N = cfg.N
+        self.association_gate = cfg.gate
         self.tentative_landmarks: list[TentativeLandmark] = []
 
     def process_unassociated_measurements(

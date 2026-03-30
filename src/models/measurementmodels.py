@@ -13,9 +13,9 @@ class RangeBearing:
 
     sigma_range: float
     sigma_bearing: float
-    max_range: float = 7.5  # [m] (currently not used)
-    max_fov: float = 2 * np.pi  # [rad] (currently not used)
-    sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
+    # max_range: float = 7.5  # [m] (currently not used)
+    # max_fov: float = 2 * np.pi  # [rad] (currently not used)
+    # sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
     
     def h_(self, x: np.ndarray, m_i: np.ndarray) -> np.ndarray:
         """Calculate the measurement prediction function h_ for a single landmark.

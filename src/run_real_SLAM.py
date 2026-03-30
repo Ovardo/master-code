@@ -10,42 +10,44 @@ from data_loader import VictoriaParkLoader
 from factor_graph_slam import FactorGraphSLAM
 from history import SLAMHistory
 from slam_types import SLAMHistoryEntry
-from utils.utils_gtsam import pose2_to_array
+from timing_profiler import TimingProfiler
 from utils.utils_victoria_park import odometry_func
 from visualization import SLAMVisualizer
+from landmark_manager import TentativeLandmarkManager
+from association import Associator
+
+
+def save_timing_data(profiler: TimingProfiler, output_dir: Path) -> None:
+    """Persist raw timing data for later analysis."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    profiler.save_json(output_dir / "timing_events.json")
+    profiler.save_csv(output_dir / "timing_events.csv")
 
 
 def main():
     # sensorOffset = np.array([car.a + car.L, car.b])
 
+    # config_path = Path(__file__).parents[0].joinpath('conf/victoria_park_config.yaml')
+    config_path = Path(__file__).parents[0].joinpath('conf/default_config.yaml')
+    # config_path = Path(__file__).parents[0].joinpath('conf/victoria_park.yaml')
+    cfg = load_config(config_path)
+
     data_folder = Path(__file__).parents[1].joinpath('data/victoria_park')
     data_loader = VictoriaParkLoader(data_folder=data_folder)
 
-    config_path = Path(__file__).parents[0].joinpath('conf/victoria_park_config.yaml')
-    cfg = load_config(config_path)
+    profiler = TimingProfiler(enabled=cfg.profilinfg_enabled)
 
-    initial_pose = np.array(data_loader.initial_position)
-
-    slam = FactorGraphSLAM(cfg.inference, initial_pose)
+    slam = FactorGraphSLAM(
+        cfg = cfg.inference, 
+        initial_pose = np.array(data_loader.initial_position),
+        profiler = profiler,
+        tentative_manager = TentativeLandmarkManager(cfg.inference.landmark_manager),
+        associator = Associator(cfg.inference.association),
+    )
 
     history = SLAMHistory()
 
-    K = 30000 # max number of steps to process
-
-    # %% Run dead reckoning
-    x_prev = gtsam.Pose2(*initial_pose) # IMPORTANT: gtsanm.Pose2(initial_pose) is different from gtsam.Pose2(*initial_pose)
-    poses_dead_reckoning = [pose2_to_array(x_prev)]
-
-    for step_input in data_loader.iterate_steps(max_steps=K):
-        odo = step_input.odometry
-        
-        # x_pred = x_prev.compose(gtsam.Pose2(*step_input.odometry))
-        x_pred = x_prev.compose(odo)
-        poses_dead_reckoning.append(pose2_to_array(x_pred))
-        x_prev = x_pred
-
-    poses_dead_reckoning = np.array(poses_dead_reckoning)
-
+    K = 5000 # max number of steps to process
 
     # %% Run SLAM 
     for step_input in tqdm(data_loader.iterate_steps(max_steps=K), total=K-1, desc="SLAM"):
@@ -66,20 +68,8 @@ def main():
 
 
     # %% Visualize final result
-
-
-    # from utils.utils_plot import plot_result, MultivariateNormalParameters
-    # poses = slam.get_estimated_poses()
-    # poses_cov = slam.get_estimated_pose_covariances()
-    # landmark = slam.get_estimated_landmarks()
-    # landmark_cov = slam.get_estimated_landmark_covariances()
-
-    # poses_dist = [MultivariateNormalParameters(pose, cov) for pose, cov in zip(poses, poses_cov)]
-    # landmarks_dist = [MultivariateNormalParameters(lm, cov) for lm, cov in zip(landmark, landmark_cov)]
-        
-    # fig, ax = plt.subplots(figsize=(10, 10))
-    # plot_result(ax, poses_dist, landmarks_dist, exact_map=False)
-
+    save_timing_data(profiler, Path(cfg.visualization.output_dir) / "profiling")
+    # save_history()
     
     visualizer = SLAMVisualizer(cfg.visualization, history)
     visualizer.plot_estimates(step=-1, plot_dead_reckoning=True, plot_covariances=False, plot_predicted_measurements=True)
@@ -90,7 +80,6 @@ def main():
 
     # visualizer.create_measurement_video_polar('measurements_polar.mp4', fps=5)
     # visualizer.create_dashboard_video('videos/dashboard.mp4', fps=10, plot_covariance=False)
-
 
     # fig, ax = visualizer.plot_final_result(slam, marginals, poses_dead_reckoning=poses_dead_reckoning, ax=ax)
     # fig.savefig("figures/jcbb_vp.pdf", bbox_inches="tight")

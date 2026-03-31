@@ -256,8 +256,6 @@ def ML_association(z, zbar, S, alpha_individual,
 
 
 
-
-
 def individualCompatibility(z, zbar, S):
     """
     Compute the individual compatibility matrix.

@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 run-real-slam = "run_real_SLAM:main"
+visualize-result = "visualize:main"
 # run-sim-slam = "run_sim_SLAM:main"
 check-gtsam-install = "gtsam_diagnostics:main"
 
@@ -43,6 +44,7 @@ py-modules = [
   "config",
   "data_loader",
   "ekf_slam",
+  "experiment_results",
   "factor_graph_slam",
   "gtsam_diagnostics",
   "history",
@@ -52,6 +54,7 @@ py-modules = [
   "slam_types",
   "timing_profiler",
   "toy_example",
+  "visualize",
   "visualization",
 ]
 

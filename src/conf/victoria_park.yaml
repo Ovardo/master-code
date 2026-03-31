@@ -1,4 +1,4 @@
-name: example_config
+name: victoria_park
 description: Example SLAM configuration for testing
 seed: 42
 profilinfg_enabled: true 

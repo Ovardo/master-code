@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from config import load_config
 from data_loader import VictoriaParkLoader
+from experiment_results import ExperimentReferenceData, save_result
 from factor_graph_slam import FactorGraphSLAM
 from history import SLAMHistory
 from slam_types import SLAMHistoryEntry
@@ -17,19 +18,13 @@ from landmark_manager import TentativeLandmarkManager
 from association import Associator
 
 
-def save_timing_data(profiler: TimingProfiler, output_dir: Path) -> None:
-    """Persist raw timing data for later analysis."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    profiler.save_json(output_dir / "timing_events.json")
-    profiler.save_csv(output_dir / "timing_events.csv")
-
 
 def main():
     # sensorOffset = np.array([car.a + car.L, car.b])
 
     # config_path = Path(__file__).parents[0].joinpath('conf/victoria_park_config.yaml')
-    config_path = Path(__file__).parents[0].joinpath('conf/default_config.yaml')
-    # config_path = Path(__file__).parents[0].joinpath('conf/victoria_park.yaml')
+    # config_path = Path(__file__).parents[0].joinpath('conf/default_config.yaml')
+    config_path = Path(__file__).parents[0].joinpath('conf/victoria_park.yaml')
     cfg = load_config(config_path)
 
     data_folder = Path(__file__).parents[1].joinpath('data/victoria_park')
@@ -47,7 +42,7 @@ def main():
 
     history = SLAMHistory()
 
-    K = 5000 # max number of steps to process
+    K = 30000 # max number of steps to process
 
     # %% Run SLAM 
     for step_input in tqdm(data_loader.iterate_steps(max_steps=K), total=K-1, desc="SLAM"):
@@ -65,11 +60,16 @@ def main():
             history.add(history_entry)
         
 
-
-
     # %% Visualize final result
-    save_timing_data(profiler, Path(cfg.visualization.output_dir) / "profiling")
-    # save_history()
+    save_result(
+        config=cfg,
+        history=history,
+        profiler=profiler,
+        reference_data=ExperimentReferenceData(
+            gps_track=data_loader.gps,
+        ),
+    )
+    
     
     visualizer = SLAMVisualizer(cfg.visualization, history)
     visualizer.plot_estimates(step=-1, plot_dead_reckoning=True, plot_covariances=False, plot_predicted_measurements=True)

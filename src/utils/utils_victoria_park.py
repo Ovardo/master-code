@@ -3,17 +3,15 @@
 # Small modifications by Odin Aleksander Severinsen 
 
 from dataclasses import dataclass
-
-import numpy as np
-
 from utils.utils_math import ssa
 
+import numpy as np
+import gtsam
 
 @dataclass(frozen=True)
 class Car:
     """
-    Car parameters for Victoria Park dataset. See data/victoria_park/info.txt 
-    for info and data/victoria_park/car.bmp for drawing 
+    See data/victoria_park/info.txt & data/victoria_park/car.bmp for info.
     """
     L: float = 2.83 # acxel distance
     H: float = 0.76 # center to wheel encoder
@@ -22,6 +20,19 @@ class Car:
 
 
 def detectTrees(scan):
+    """
+    Detect trees in a single 180° laser scan (0.5° resoultion)
+    using the algorithm described in TODO
+
+    Parameters
+    ----------
+    scan : np.ndarray, shape=(361,)
+
+    Returns
+    -------
+    z : np.ndarray, shape=(M, 2)
+        Detected tree measurements as (range, bearing) pairs.
+    """
 
     M11 = 75
     M10 = 1
@@ -203,6 +214,7 @@ def detectTrees(scan):
 
     ranges = Rs + dL5 / 2.0
     angles = (A5 + A5u) / 2.0 - np.pi / 2
+    angles = ssa(angles)  # wrap to [-pi, pi]
     diameters = dL5
 
     # z = np.array([[ranges], [angles]]).squeeze().T
@@ -214,74 +226,58 @@ def detectTrees(scan):
     return z
 
 
-def odometry_func(v_e, alpha, dt):
-    car = Car() # use default car parameters
-    
-    H = car.H
-    L = car.L
 
-    # R = L / np.tan(alpha) # turning radius of the path (inf if alpha=0)
-    # v_e = v_c * (1 - H / R) --> v_c = v_e / (1 - H/R) = v_e / (1 - H * np.tan(alpha) / L)
-    # omega = v_c * np.tan(alpha) / L  # angular velocity (omega = v/R = v_c * tan(alpha) / L)
-    # twist = np.array([v_c, 0.0, omega]) # [v_x, v_y, omega]
-    # integrate twist to get odometry increment (using exact integration for unicycle model)
-    
-    v_c = v_e / (1 - H * np.tan(alpha) / L) 
-    dp = dt * v_c * np.tan(alpha) / L
-    dx = dt * v_c * np.sinc(dp / np.pi)
-    if np.abs(dp) < 0.001:
-        dy = dt * v_c * (dp / 2 - dp ** 3 / 24 + dp ** 5 / 720) # Taylor approximation
-    else:
-        dy = dt * v_c * (1 - np.cos(dp)) / dp
-
-    odo = np.array([dx, dy, dp])
-
-    # import gtsam
-    twist = np.array([v_c*dt, 0.0, dp]) # [v_x, v_y, omega*dt]
-    odos = gtsam.Pose2.Expmap(twist)
-    J_exp = gtsam.Pose2.ExpmapDerivative(twist)
-
-    return odo
-
-import gtsam
-import numpy as np
-
-
-def odom_increment_and_jac_from_ve_alpha(ve, alpha, dt):
+def odom_from_u(vel_e, steer, dt):
     """
-    Build Pose2 increment via GTSAM Expmap + propagate input covariance Su on [ve, alpha]
-    to Qu on [dx, dy, dtheta].
+    Convert encoder-frame velocity and wheel steer angle to pose increment using the 
+    kinematic bicycle model. Also calculates the coresponding jacobian.
 
-    Su: 2x2 covariance of [ve, alpha]
+    Parameters
+    ----------
+    vel_e : float
+        Forward velocity at encoder frame (left rear wheel)
+    steer : float
+        Wheel steer angle
+    dt : float
+        Time step duration
+
+    Returns
+    -------
+    odo : gtsam.Pose2
+        Relative odometry increment 
+    J_odo_u : np.ndarray, shape=(3,2)
+        Jacobian of odometry increment w.r.t. u = [vel_e, steer]
     """
     car = Car() # use default car parameters
+    
     L = car.L
     H = car.H
 
-    t = np.tan(alpha)
-    sec2 = 1.0 / (np.cos(alpha)**2)
+    # ---- Convert velocity from encoder frame to body frame (center of rear axel)  ----
+    t = np.tan(steer)
+    sec2 = 1.0 / (np.cos(steer)**2)
     k = H / L
     d = 1.0 - k * t
+    vel_b = vel_e / d
 
-    vc = ve / d
-    omega = (vc / L) * t
+    omega = (vel_b / L) * t
 
-    # ---- twist for Pose2.Expmap ----
-    twist = np.array([vc*dt, 0.0, omega*dt], dtype=float)
+    # ---- Planar body twist ----
+    twist_b = np.array([vel_b, 0.0, omega], dtype=float)
 
-    # ---- Get Expmap + ExpmapDerivative from GTSAM ----
-    odo = gtsam.Pose2.Expmap(twist)
-    J_exp_twist = gtsam.Pose2.ExpmapDerivative(twist)
+    # ---- Integrate twist of time interval, e.g. Expmap ----
+    odo = gtsam.Pose2.Expmap(twist_b*dt)
+    J_exp_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
     
-    # ---- d(twist)/d[ve, alpha] ----
+    # ---- d(twist)/d[vel_e, steer] ----
     dvc_dve = 1.0 / d
-    dvc_da  = ve * (k * sec2) / (d*d)
+    dvc_da  = vel_e * (k * sec2) / (d*d)
 
     drho1_dve = dt * dvc_dve
     drho1_da  = dt * dvc_da
 
     ddp_dve = (dt / L) * t * dvc_dve
-    ddp_da  = (dt / L) * (t * dvc_da + vc * sec2)
+    ddp_da  = (dt / L) * (t * dvc_da + vel_b * sec2)
 
     J_twist_u = np.array([
         [drho1_dve, drho1_da],
@@ -289,178 +285,41 @@ def odom_increment_and_jac_from_ve_alpha(ve, alpha, dt):
         [ddp_dve,   ddp_da   ],
     ], dtype=float)
 
-    # ---- Chain rule to odometry coordinates ----
+    # ---- Chain rule ----
     J_exp_u = J_exp_twist @ J_twist_u
 
     return odo, J_exp_u
 
 
-def _ab_and_derivs(theta, eps=1e-6):
-    """
-    a = sin(theta)/theta
-    b = (1 - cos(theta))/theta
-    and derivatives a', b' w.r.t theta
-
-    Uses Taylor expansions near 0 for numerical stability.
-    """
-    th = float(theta)
-    ath = abs(th)
-
-    if ath < eps:
-        # Series:
-        # a = 1 - th^2/6 + th^4/120
-        # b = th/2 - th^3/24 + th^5/720
-        # a' = -th/3 + th^3/30 - th^5/840
-        # b' = 1/2 - th^2/8 + th^4/144
-        th2 = th*th
-        th3 = th2*th
-        th4 = th2*th2
-        th5 = th4*th
-
-        a  = 1.0 - th2/6.0 + th4/120.0
-        b  = th/2.0 - th3/24.0 + th5/720.0
-        ap = -th/3.0 + th3/30.0 - th5/840.0
-        bp = 0.5 - th2/8.0 + th4/144.0
-    else:
-        s = np.sin(th)
-        c = np.cos(th)
-        a = s / th
-        b = (1.0 - c) / th
-        ap = (th*c - s) / (th*th)
-        bp = (th*s - (1.0 - c)) / (th*th)
-
-    return a, b, ap, bp
-
-def odometry_expmap_w_jacobian(ve, alpha, dt, car, dy_sign=+1.0):
-    """
-    SE(2) Expmap-based odometry increment + Jacobian wrt inputs [ve, alpha].
-
-    Inputs:
-      ve    : wheel encoder speed (your measured)
-      alpha : steering angle
-      dt    : timestep
-      car   : object with fields L, H  (wheelbase and offset)
-      dy_sign: set to -1.0 if you want dy = vc*dt*(cos-1)/theta (your current sign)
-
-    Returns:
-      odo : np.array([dx, dy, dtheta])
-      J   : 3x2 Jacobian d(odo)/d[ve, alpha]
-    """
-    L = car.L
-    H = car.H
-
-    t = np.tan(alpha)
-    sec2 = 1.0 / (np.cos(alpha)**2)  # d/dalpha tan(alpha)
-
-    k = H / L
-    d = 1.0 - k * t                  # denominator
-
-    # vc = ve / d
-    vc = ve / d
-
-    # omega = (vc/L) * tan(alpha)
-    omega = (vc / L) * t
-
-    # theta = omega dt
-    theta = omega * dt
-
-    # SE(2) left-Jacobian-like V(theta)
-    a, b, ap, bp = _ab_and_derivs(theta)
-
-    # rho = [vc*dt, 0]
-    rho1 = vc * dt
-
-    # Translation t = V(theta) rho, with rho2=0:
-    dx = a * rho1
-    dy = dy_sign * (b * rho1)  # choose sign convention
-
-    dtheta = theta
-
-    odo = np.array([dx, dy, dtheta], dtype=float)
-
-    # ---- Vehicle-part derivatives: vc and theta wrt ve, alpha ----
-    # dvc/dve = 1/d
-    dvc_dve = 1.0 / d
-    # dvc/dalpha = ve * (k * sec2) / d^2
-    dvc_da  = ve * (k * sec2) / (d*d)
-
-    # theta = dt * (vc/L) * t
-    # dtheta/dve = dt/L * t * dvc/dve
-    dth_dve = (dt / L) * t * dvc_dve
-    # dtheta/dalpha = dt/L * ( t*dvc/da + vc*sec2 )
-    dth_da  = (dt / L) * (t * dvc_da + vc * sec2)
-
-    # rho1 = vc*dt
-    drho1_dve = dt * dvc_dve
-    drho1_da  = dt * dvc_da
-
-    # ---- Geometry-part derivatives via chain rule ----
-    # dx = a(theta) * rho1
-    # d(dx)/du = a' * dtheta/du * rho1 + a * drho1/du
-    ddx_dve = ap * dth_dve * rho1 + a * drho1_dve
-    ddx_da  = ap * dth_da  * rho1 + a * drho1_da
-
-    # dy = sign * b(theta) * rho1
-    ddy_dve = dy_sign * (bp * dth_dve * rho1 + b * drho1_dve)
-    ddy_da  = dy_sign * (bp * dth_da  * rho1 + b * drho1_da)
-
-    # dtheta derivatives already computed
-    J = np.array([
-        [ddx_dve, ddx_da],
-        [ddy_dve, ddy_da],
-        [dth_dve, dth_da],
-    ], dtype=float)
-
-    return odo, J
-
-
-
-
-
-
-# def odometry_w_jacobian(ve, alpha, dt, psi):
+# def odometry_func(v_e, steer, dt):
 #     car = Car() # use default car parameters
     
 #     H = car.H
 #     L = car.L
-#     a = car.a
-#     b = car.b
 
-#     tan_a = np.tan(alpha)
-#     cos_p = np.cos(psi)
-#     sin_p = np.sin(psi)
+#     # R = L / np.tan(steer) # turning radius of the path (inf if steer=0)
+#     # v_e = v_c * (1 - H / R) --> v_c = v_e / (1 - H/R) = v_e / (1 - H * np.tan(steer) / L)
+#     # omega = v_c * np.tan(steer) / L  # angular velocity (omega = v/R = v_c * tan(steer) / L)
+#     # twist = np.array([v_c, 0.0, omega]) # [v_x, v_y, omega]
+#     # integrate twist to get odometry increment (using exact integration for unicycle model)
+    
+#     v_c = v_e / (1 - H * np.tan(steer) / L) 
+#     dp = dt * v_c * np.tan(steer) / L
+#     dx = dt * v_c * np.sinc(dp / np.pi)
+#     if np.abs(dp) < 0.001:
+#         dy = dt * v_c * (dp / 2 - dp ** 3 / 24 + dp ** 5 / 720) # Taylor approximation
+#     else:
+#         dy = dt * v_c * (1 - np.cos(dp)) / dp
 
-#     # central velocity (same as before; used for odometry + also inside Jacobian entries)
-#     v_c = ve / (1.0 - tan_a * (H / L))
+#     odo = np.array([dx, dy, dp])
 
-#     # Odometry increment
-#     el1 = dt * (v_c*cos_p - (v_c/L)*tan_a*(a*sin_p + b*cos_p))
-#     el2 = dt * (v_c*sin_p + (v_c/L)*tan_a*(a*cos_p - b*sin_p))
-#     el3 = dt * (v_c/L) * tan_a
-#     el31 = ssa(el3)
+#     # import gtsam
+#     twist = np.array([v_c*dt, 0.0, dp]) # [v_x, v_y, omega*dt]
+#     odos = gtsam.Pose2.Expmap(twist)
+#     J_exp = gtsam.Pose2.ExpmapDerivative(twist)
 
-#     odometry = np.array([[el1, el2, el31]])
+#     return odo
 
-#     # ---------- Jacobian wrt [v_c, alpha] ----------
-#     sec2_a = 1.0 / (np.cos(alpha) ** 2)  # d/dalpha tan(alpha)
-
-#     # d/dv_c
-#     d1_dvc = dt * (cos_p - (1.0/L)*tan_a*(a*sin_p + b*cos_p))
-#     d2_dvc = dt * (sin_p + (1.0/L)*tan_a*(a*cos_p - b*sin_p))
-#     d3_dvc = dt * (1.0/L) * tan_a
-
-#     # d/dalpha (treating v_c as independent of alpha)
-#     d1_dalpha = dt * (-(v_c/L) * sec2_a * (a*sin_p + b*cos_p))
-#     d2_dalpha = dt * ( (v_c/L) * sec2_a * (a*cos_p - b*sin_p))
-#     d3_dalpha = dt * ( (v_c/L) * sec2_a)
-
-#     J = np.array([
-#         [d1_dvc, d1_dalpha],
-#         [d2_dvc, d2_dalpha],
-#         [d3_dvc, d3_dalpha],
-#     ])
-
-#     return odometry, J
 
  
 

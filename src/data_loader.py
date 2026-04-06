@@ -2,16 +2,25 @@
 Victoria Park dataset loader module.
 Handles loading and preprocessing of Victoria Park SLAM dataset.
 """
-
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
 import numpy as np
 from scipy.io import loadmat
 
-from slam_types import SLAMStepInput
-from utils.utils_math import ssa
-from utils.utils_victoria_park import detectTrees, odom_increment_and_jac_from_ve_alpha
+
+@dataclass(slots=True)
+class SLAMStepInput:
+    """Runtime input consumed by a single SLAM update."""
+
+    step_index: int
+    timestamp: float | None
+    ve_dr: float
+    alpha_dr: float
+    dt_dr: float
+    z_lsr: np.ndarray | None    
+
 
 
 class VictoriaParkLoader:
@@ -19,18 +28,10 @@ class VictoriaParkLoader:
     Iterator-based loader for Victoria Park SLAM dataset.
     
     Handles all timing synchronization between dead reckoning and laser measurements,
-    and provides clean step-by-step data access.
     """
     
     def __init__(self, data_folder: Path):
-        """
-        Initialize the Victoria Park data loader.
-        
-        Parameters
-        ----------
-        data_folder : Path, optional
-            Path to the Victoria Park data folder
-        """        
+     
         # Load raw data
         self._load_data(data_folder)
         
@@ -41,7 +42,7 @@ class VictoriaParkLoader:
     def _load_data(self, data_folder: Path):
         """Load all data from .mat files."""
         if data_folder is None:
-            data_folder = Path(__file__).parents[1].joinpath("data/victoria_park")
+            data_folder = Path(__file__).parents[1].joinpath("data/victoria_park/matlab")
         
         # Load .mat files
         realSLAM_ws = {
@@ -102,21 +103,13 @@ class VictoriaParkLoader:
             if dt_dr < 0:
                 raise ValueError(f"Negative time increment at step {k_dr}")
             
-            self.t = self.T_lsr[self.k_lsr]  
-            ve_dr = self.Ve_dr[k_dr + 1] # we do not really have this value yet in 
-            alpha_dr = self.Alpha_dr[k_dr + 1] #
-
-            # odo = odometry_func(vel, steer, dt)
-            odo, J_odo = odom_increment_and_jac_from_ve_alpha(ve_dr, alpha_dr, dt_dr)
-        
-            # Process laser measurements
-            z_lsr = self.Z_lsr[self.k_lsr]  # (361,) raw lidar scan
-            meas = detectTrees(z_lsr)
-            meas[:, 1] = ssa(meas[:, 1])
+            ve_dr = self.Ve_dr[k_dr] 
+            alpha_dr = self.Alpha_dr[k_dr] #
             
-            # filter measurements with range > 10m 
-            meas = meas[meas[:, 0] <= 40] # TODO! 
-    
+            self.t = self.T_lsr[self.k_lsr]  
+            z_lsr = self.Z_lsr[self.k_lsr]  # (361,) raw lidar scan
+            
+            
             # Create step with accumulated odometry
             step = SLAMStepInput(
                 step_index=k_dr,
@@ -125,8 +118,6 @@ class VictoriaParkLoader:
                 alpha_dr=alpha_dr,
                 dt_dr=dt_dr,
                 z_lsr=z_lsr,
-                odometry=odo,
-                measurements=meas,
             )
    
             self.k_lsr += 1
@@ -137,9 +128,6 @@ class VictoriaParkLoader:
             self.t = self.T_dr[k_dr + 1]
             ve_dr = self.Ve_dr[k_dr + 1]
             alpha_dr = self.Alpha_dr[k_dr + 1]
-            
-            # odo = odometry_func(vel, steer, dt)
-            odo, J_odo = odom_increment_and_jac_from_ve_alpha(ve_dr, alpha_dr, dt_dr)
 
             step = SLAMStepInput(
                 step_index=k_dr,
@@ -148,8 +136,6 @@ class VictoriaParkLoader:
                 alpha_dr=alpha_dr,
                 dt_dr=dt_dr,
                 z_lsr=None,
-                odometry=odo,
-                measurements=np.empty((0, 2)),  
             )
         
         return step
@@ -194,8 +180,8 @@ class VictoriaParkLoader:
     
     @property
     def initial_position(self) -> np.ndarray:
-        """Return initial position (x, y, theta) from GPS data in local coordinate frame."""
-        return np.array([self.Lo_gps[0], self.La_gps[0], 36 * np.pi / 180])
+        """Return initial position (x, y, theta) from GPS data in ENU frame."""
+        return np.array([self.Lo_gps[1], self.La_gps[1], 36 * np.pi / 180])
     
     
    

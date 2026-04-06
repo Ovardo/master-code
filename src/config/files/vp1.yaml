@@ -1,0 +1,25 @@
+name: example_config
+description: Example SLAM configuration for testing
+noise:
+  odom_input_vel_std: 0.1
+  odom_input_alpha_deg_std: 0.5
+  odom_output_x_std: 0.05
+  odom_output_y_std: 0.05
+  odom_output_yaw_deg_std: 0.1
+  landmark_range_std: 0.2
+  landmark_bearing_deg_std: 0.5
+  init_pose_x_std: 0.001
+  init_pose_y_std: 0.001
+  init_pose_yaw_deg_std: 0.005
+sensor:
+  max_range: 45.0
+  fov_deg: 220.0
+tentative:
+  M: 3
+  'N': 4
+  gate: 0.05
+association:
+  method: jcbb
+  alpha_individual: 0.9999
+  alpha_joint: 0.99999
+

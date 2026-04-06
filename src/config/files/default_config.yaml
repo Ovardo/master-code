@@ -1,0 +1,24 @@
+name: Hellow World
+description: description of the SLAM configuration and scenario
+noise:
+  odom_input_vel_std: 0.1
+  odom_input_alpha_deg_std: 0.5
+  odom_output_x_std: 0.1
+  odom_output_y_std: 0.1
+  odom_output_yaw_deg_std: 0.1
+  landmark_range_std: 0.2
+  landmark_bearing_deg_std: 1.0
+  init_pose_x_std: 0.05
+  init_pose_y_std: 0.05
+  init_pose_yaw_deg_std: 0.5
+sensor:
+  max_range: 50.0
+  fov_deg: 250.0
+tentative:
+  M: 3
+  'N': 4
+  gate: 0.1
+association:
+  method: jcbb
+  alpha_individual: 0.999
+  alpha_joint: 0.9999

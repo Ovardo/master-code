@@ -157,7 +157,7 @@ class VictoriaParkLoader:
         self._reset_state()
         n_steps = min(max_steps, self.K_dr - 1) if max_steps else self.K_dr - 1
         
-        for k in range(1, n_steps):
+        for k in range(0, n_steps):
             try:
                 yield self.get_step(k)
             except StopIteration:

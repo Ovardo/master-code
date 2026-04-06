@@ -5,12 +5,10 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 ## Simulation And Data Pipeline
 
 - [ ] Add panel holoviz visualization.
-- [ ] Replace the remaining dict-based simulator output with typed step/event objects, similar to `SLAMStep`.
 - [ ] Introduce a timestamp-sorted event stream for simulated odometry and landmark measurements so the main loop can process them causally.
-- [ ] Implement `DynamicRobotSimulatorSE2` so simulations can be driven by control inputs instead of pre-defined poses.
-- [ ] Move the hard-coded lidar range filter in `VictoriaParkLoader` into configuration.
 - [ ] Save result as pickles dict
 - [ ] Figure out if i should save the whole pose history at each iteration or just the current pose and reconstruct the history from that for visualization and analysis. When doing smoothing the current pose at one iteration may change in later iterations, so saving the whole pose history at each iteration may be more accurate for analysis and visualization. However, it may also take up more storage space. I will need to experiment with both approaches and see which one works better for my use case.
+- [ ] Save synced input data in a new txt file. Look into time syncronization of sensors and how to implement it
   
 
 ## Association And Landmark Management
@@ -25,7 +23,7 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 ## Numerics And Cleanup
 
 - [ ] Replace `reorder_covariance_naive` with a safer key-aware covariance reordering utility.
-- [ ] Remove unused legacy pieces in `FactorGraphSLAM`, such as the unused `motion_model`.
+- [ ] Remove unused legacy pieces
 - [ ] Handle near-singular range/bearing Jacobians more gracefully when landmarks are very close to the robot.
 - [ ] Audit bearing/range ordering across the simulator, config, and GTSAM interfaces, then lock it down with tests.
 

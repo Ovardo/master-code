@@ -4,6 +4,7 @@ This repository contains the code developed for **TTK4900 – Master’s Thesis 
  
 Code related to the **Specialization Project (TTK4550)** is available in the branch `project-thesis-baseline`.
 
+
 ## Setup
 
 The project now uses `pyproject.toml` as the main source of dependency metadata.

@@ -1,5 +1,10 @@
-"""Association module for data association in SLAM."""
+"""
+JCBB logic implementation adapted from work by TODO
+"""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from functools import lru_cache
 
 import lap
@@ -7,18 +12,28 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
 
-from config import AssociationConfig
+from config import SLAMConfig
 from utils import utils_math
-
 
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
-class Associator:
-    def __init__(self, cfg: AssociationConfig):
-        self.cfg = cfg
 
-    def associate(self, z: np.ndarray, zbar: np.ndarray, innovation_covariance: np.ndarray) -> np.ndarray:
-        """Associate measurements to predicted measurements using method specified in self.cfg.association_method.
+def get_associatior(cfg: SLAMConfig) -> Associator:
+    """Factory function to create an associator based on the config."""
+    return Associator(
+        method=cfg.association.method,
+        alpha_individual=cfg.association.alpha_individual,
+        alpha_joint=cfg.association.alpha_joint,
+    )
+
+@dataclass
+class Associator:
+    method: str
+    alpha_individual: float
+    alpha_joint: float
+
+    def associate(self, z: np.ndarray, zbar: np.ndarray, S: np.ndarray) -> np.ndarray:
+        """Associate measurements to predicted measurements using method specified in self.method.
         
         Parameters
         ----------
@@ -26,7 +41,7 @@ class Associator:
             Stacked measurements.
         zbar : np.ndarray, shape=(L,2)
             Stacked predicted measurements.
-        innovation_covariance : np.ndarray, shape=(2*L, 2*L)
+        S : np.ndarray, shape=(2*L, 2*L)
             Innovation covariance matrix.
 
         Returns
@@ -35,20 +50,17 @@ class Associator:
             Association vector with elements:
             - >=0 for index into zbar
             - -1 for unassociated (new landmark or outlier)
-            - -2 for ambiguous association (unsure if outlier/new landmark or valid match)
         """
-        method = self.cfg.method
-
-        if method == 'jcbb':
-            associations = JCBB_assocation(z, zbar, innovation_covariance, self.cfg.alpha_individual, self.cfg.alpha_joint)
-        elif method == 'ml':
-            associations = ML_association(z, zbar, innovation_covariance, self.cfg.alpha_individual)
-        elif method == 'gt':
+        if self.method == 'jcbb':
+            associations = JCBB_assocation(z, zbar, S, self.alpha_individual, self.alpha_joint)
+        elif self.method == 'ml':
+            associations = ML_association(z, zbar, S, self.alpha_individual)
+        elif self.method == 'gt':
             pass # to be implemented
-        elif method == 'nn':
+        elif self.method == 'nn':
             pass # to be implemented
         else:
-            raise ValueError(f"Unknown association method: {self.cfg.method}")
+            raise ValueError(f"Unknown association method: {self.method}")
        
         return associations
     
@@ -68,7 +80,7 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     assert S.shape == (2 * L, 2 * L), "S must be of shape (2*L, 2*L) in JCBB"
 
     a = np.full(M, -1, dtype=int)
-    abest = np.full(M, -1, dtype=int)
+    a_best = np.full(M, -1, dtype=int)
 
     # ic has measurements rowwise and predicted measurements columnwise
     ic = individualCompatibility(z, zbar, S)
@@ -78,20 +90,11 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     ic_ordered = ic[order]
     j = 0
 
-    abest_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, abest)
-    
-    # g2_ambigious = chi2.isf(1-0.97, 2) # TODO: floating threshold for ambigious associations (currently fixed at 95% confidence)
-    # for i, j in enumerate(abest_ordered): # i: measurment index in ordered, j: associated landmark index or -1
-    #     if j >= 0: # measurment i accoicated with landmark j
-    #         if ic_ordered[i, j] >= g2_ambigious: # if the association is above the ambigious threshold, mark it as ambigious
-    #             abest_ordered[i] = -2
-    #     if j == -1: # if the measurement is unassociated, 
-    #         if np.min(ic_ordered[i]) <= g2_ambigious:
-    #             abest_ordered[i] = -2
+    a_best_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, a_best)
 
-    abest[order] = abest_ordered
+    a_best[order] = a_best_ordered
 
-    return abest
+    return a_best
 
 
 def _JCBBrec(z, zbar, S, alpha_joint, g2, j, a, ic, abest):

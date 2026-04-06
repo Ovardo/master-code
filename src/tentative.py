@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from config import LandmarkManagerConfig
+from config import SLAMConfig
 
 
 @dataclass
@@ -84,7 +86,15 @@ class TentativeLandmark:
         future_steps_left = N - steps_used
         max_possible_hits = self.hit_count + max(0, future_steps_left)
         return max_possible_hits >= M
+    
 
+def get_tentative_landmark_manager(cfg: SLAMConfig) -> TentativeLandmarkManager:
+    """Factory function to create a TentativeLandmarkManager based on the config."""
+    return TentativeLandmarkManager(
+        M=cfg.tentative.M,
+        N=cfg.tentative.N,
+        gate=cfg.tentative.gate,
+    )
 
 class TentativeLandmarkManager:
     """
@@ -99,16 +109,16 @@ class TentativeLandmarkManager:
       4. Stale tentative landmarks are pruned.
     """
 
-    def __init__(self, cfg: LandmarkManagerConfig) -> None:
+    def __init__(self, M, N, gate) -> None:
         
-        assert cfg.M > 0, "M must be > 0"
-        assert cfg.N > 0, "N must be > 0"
-        assert cfg.M <= cfg.N, "M must be <= N"
-        assert cfg.gate > 0, "association_gate must be > 0"
+        assert M > 0, "M must be > 0"
+        assert N > 0, "N must be > 0"
+        assert M <= N, "M must be <= N"
+        assert gate > 0, "association_gate must be > 0"
 
-        self.M = cfg.M
-        self.N = cfg.N
-        self.association_gate = cfg.gate
+        self.M = M
+        self.N = N
+        self.association_gate = gate
         self.tentative_landmarks: list[TentativeLandmark] = []
 
     def process_unassociated_measurements(

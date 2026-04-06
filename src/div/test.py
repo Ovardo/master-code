@@ -1,7 +1,7 @@
 import lap
 import numpy as np
-from models.measurementmodels import RangeBearing
-from models.measurementmodels_offset import RangeBearing as RangeBearingOffset
+from measurementmodels import RangeBearing
+from models_.measurementmodels_offset import RangeBearing as RangeBearingOffset
 
 # IC = np.random.rand(4, 5)
 # print(IC)

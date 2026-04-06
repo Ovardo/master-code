@@ -7,7 +7,7 @@ from matplotlib.collections import LineCollection
 from scipy.stats.distributions import chi2
 
 from association import NIS
-from config import VisualizationConfig
+from conf.config import VisualizationConfig
 from history import SLAMHistory
 from slam_types import AMBIGUOUS, UNASSOCIATED
 from utils.utils_plot import MultivariateNormalParameters, plot_ellipse

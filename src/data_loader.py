@@ -4,164 +4,120 @@ Handles loading and preprocessing of Victoria Park SLAM dataset.
 """
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
 
 import numpy as np
 from scipy.io import loadmat
 
+@dataclass(slots=True)
+class OdometryInput:
+    timestamp: float
+    ve: float
+    alpha: float
+    dt: float
 
 @dataclass(slots=True)
-class SLAMStepInput:
-    """Runtime input consumed by a single SLAM update."""
-
+class LidarStepInput:
     step_index: int
-    timestamp: float | None
-    ve_dr: float
-    alpha_dr: float
-    dt_dr: float
-    z_lsr: np.ndarray | None    
-
+    timestamp: float
+    odometry: list[OdometryInput]
+    z_lsr: np.ndarray
 
 
 class VictoriaParkLoader:
     """
-    Iterator-based loader for Victoria Park SLAM dataset.
-    
+    Iterator-based loader for Victoria Park SLAM dataset.  
     Handles all timing synchronization between dead reckoning and laser measurements,
     """
-    
-    def __init__(self, data_folder: Path):
-     
-        # Load raw data
-        self._load_data(data_folder)
-        
-        # Initialize iteration state
-        self._reset_state()
-    
-
-    def _load_data(self, data_folder: Path):
-        """Load all data from .mat files."""
+    def __init__(self, data_folder: Path | None = None):
         if data_folder is None:
             data_folder = Path(__file__).parents[1].joinpath("data/victoria_park/matlab")
+        self._load_data(data_folder)
         
-        # Load .mat files
-        realSLAM_ws = {
+    def _load_data(self, data_folder: Path):
+        """Load all raw data from .mat files."""
+        raw_data = {
             **loadmat(str(data_folder.joinpath("aa3_dr"))),
             **loadmat(str(data_folder.joinpath("aa3_lsr2"))),
             **loadmat(str(data_folder.joinpath("aa3_gpsx"))),
         }
         
         # Laser data (lsr)
-        self.Z_lsr = realSLAM_ws["LASER"] / 100 # (K_lsr, 361) convert from cm to m 
-        self.T_lsr = (realSLAM_ws["TLsr"] / 1000).ravel() # (K_lsr,) convert ms to s 
+        self.Z_lsr = raw_data["LASER"] / 100 # (K_lsr, 361) cm -> m 
+        self.T_lsr = raw_data["TLsr"].ravel() / 1000 # (K_lsr,) ms -> s 
         
-        # Dead reckoning data (dr)
-        self.Alpha_dr = realSLAM_ws["steering"].ravel() # (K_dr,)
-        self.Ve_dr = realSLAM_ws["speed"].ravel() # (K_dr,)
-        self.T_dr = (realSLAM_ws["time"] / 1000).ravel() # (K_dr,) convert ms to s 
+        # Odometry data (odo)
+        self.Alpha_odo = raw_data["steering"].ravel() # (K_odo,)
+        self.Ve_odo = raw_data["speed"].ravel() # (K_odo,)
+        self.T_odo = raw_data["time"].ravel() / 1000 # (K_odo,) ms -> s 
         
         # GPS data (gps)
-        self.La_gps = realSLAM_ws["La_m"].ravel() # (K_gps,)
-        self.Lo_gps = realSLAM_ws["Lo_m"].ravel() # (K_gps,)
-        self.T_gps = (realSLAM_ws["timeGps"] / 1000).ravel() #  (K_gps,) convert ms to s 
+        self.La_gps = raw_data["La_m"].ravel() # (K_gps,)
+        self.Lo_gps = raw_data["Lo_m"].ravel() # (K_gps,)
+        self.T_gps = raw_data["timeGps"].ravel() / 1000 #  (K_gps,) ms -> s 
         
         # Data sizes
-        self.K_dr = self.T_dr.size
+        self.K_odo = self.T_odo.size
         self.K_lsr = self.T_lsr.size
         self.K_gps = self.T_gps.size
     
-    def _reset_state(self):
-        """Reset iteration state to beginning."""
-        self.k_lsr = 1  # First laser measurement (0 seems to be off in timing)
-        self.t = self.T_dr[0] # time of last processed step (start with first dead reckoning timestamp)
-    
 
-    def get_step(self, k_dr: int) -> SLAMStepInput:
-        """
-        Get processed data for dead step k.
-        
-        Parameters
-        ----------
-        k_dr : int
-            Odometry step index (1-based)
-        
-        Returns
-        -------
-        SLAMStepInput
-            Processed step data including odometry and any measurements
-        """
-        if k_dr >= self.K_dr- 1:
-            raise StopIteration(f"Reached end of data at step {k_dr}")
-        
-        # Check if we have a laser measurement at this step
-        has_laser = (self.k_lsr < self.K_lsr - 1 and 
-                     self.T_lsr[self.k_lsr] <= self.T_dr[k_dr + 1])
-        
-        if has_laser:
-            # Compute odometry up to laser measurement time
-            dt_dr = self.T_lsr[self.k_lsr] - self.t
-            if dt_dr < 0:
-                raise ValueError(f"Negative time increment at step {k_dr}")
-            
-            ve_dr = self.Ve_dr[k_dr] 
-            alpha_dr = self.Alpha_dr[k_dr] #
-            
-            self.t = self.T_lsr[self.k_lsr]  
-            z_lsr = self.Z_lsr[self.k_lsr]  # (361,) raw lidar scan
-            
-            
-            # Create step with accumulated odometry
-            step = SLAMStepInput(
-                step_index=k_dr,
-                timestamp=self.t,
-                ve_dr=ve_dr,
-                alpha_dr=alpha_dr,
-                dt_dr=dt_dr,
-                z_lsr=z_lsr,
-            )
-   
-            self.k_lsr += 1
-            
-        else:
-            # No laser measurement - just odometry
-            dt_dr = self.T_dr[k_dr + 1] - self.t
-            self.t = self.T_dr[k_dr + 1]
-            ve_dr = self.Ve_dr[k_dr + 1]
-            alpha_dr = self.Alpha_dr[k_dr + 1]
+    def iter_lidar_steps(self, max_steps: int | None = None):
+        first_lidar_idx = 1  # idx 0 is a bit off in timing, so start from 1
+        last_time = self.T_odo[0]
 
-            step = SLAMStepInput(
-                step_index=k_dr,
-                timestamp=self.t,
-                ve_dr=ve_dr,
-                alpha_dr=alpha_dr,
-                dt_dr=dt_dr,
-                z_lsr=None,
+        n_lidar = self.K_lsr - first_lidar_idx
+        if max_steps is not None:
+            n_lidar = min(n_lidar, max_steps)
+
+        k_odo = 1
+
+        for i in range(n_lidar):
+            k_lsr = first_lidar_idx + i
+            t_scan = self.T_lsr[k_lsr]
+
+            odometry = []
+
+            while k_odo < self.K_odo and self.T_odo[k_odo] <= t_scan:
+                dt = self.T_odo[k_odo] - last_time
+                if dt < 0:
+                    raise ValueError(f"Negative dt at odometry index {k_odo}")
+
+                if dt > 0:
+                    odometry.append(
+                        OdometryInput(
+                            timestamp=self.T_odo[k_odo],
+                            ve=self.Ve_odo[k_odo],
+                            alpha=self.Alpha_odo[k_odo],
+                            dt=dt,
+                        )
+                    )
+                    last_time = self.T_odo[k_odo]
+
+                k_odo += 1
+
+            # handle partial interval if scan falls between odometry timestamps
+            if last_time < t_scan and k_odo < self.K_odo:
+                dt = t_scan - last_time
+                if dt < 0:
+                    raise ValueError(f"Negative partial dt before lidar index {k_lsr}")
+
+                odometry.append(
+                    OdometryInput(
+                        timestamp=t_scan,
+                        ve=self.Ve_odo[k_odo-1],
+                        alpha=self.Alpha_odo[k_odo-1],
+                        dt=dt,
+                    )
+                )
+                last_time = t_scan
+
+            yield LidarStepInput(
+                step_index=i,
+                timestamp=t_scan,
+                odometry=odometry,
+                z_lsr=self.Z_lsr[k_lsr],
             )
-        
-        return step
-    
-    def iterate_steps(self, max_steps: Optional[int] = None) -> Iterator[SLAMStepInput]:
-        """
-        Iterate through all SLAM steps.
-        
-        Parameters
-        ----------
-        max_steps : int, optional
-            Maximum number of steps to process
-        
-        Yields
-        ------
-        SLAMStepInput
-            Data for each step
-        """
-        self._reset_state()
-        n_steps = min(max_steps, self.K_dr - 1) if max_steps else self.K_dr - 1
-        
-        for k in range(0, n_steps):
-            try:
-                yield self.get_step(k)
-            except StopIteration:
-                break
+
 
     @property
     def lidar(self) -> np.ndarray:
@@ -169,9 +125,9 @@ class VictoriaParkLoader:
         return np.column_stack([self.T_lsr, self.Z_lsr])
     
     @property
-    def dead_reckoning(self) -> np.ndarray:
-        """Return raw (unsynced) dead reckoning measurement as (K_dr, 3) array of [ve, alpha, t_dr]."""
-        return np.column_stack([self.Ve_dr, self.Alpha_dr, self.T_dr])
+    def odometry(self) -> np.ndarray:
+        """Return raw (unsynced) dead reckoning measurement as (k_odo, 3) array of [ve, alpha, t_dr]."""
+        return np.column_stack([self.Ve_odo, self.Alpha_odo, self.T_odo])
 
     @property
     def gps(self) -> np.ndarray:
@@ -179,9 +135,9 @@ class VictoriaParkLoader:
         return np.column_stack([self.Lo_gps, self.La_gps, self.T_gps])
     
     @property
-    def initial_position(self) -> np.ndarray:
+    def initial_pose(self) -> np.ndarray:
         """Return initial position (x, y, theta) from GPS data in ENU frame."""
-        return np.array([self.Lo_gps[1], self.La_gps[1], 36 * np.pi / 180])
+        return np.array([self.Lo_gps[1], self.La_gps[1], np.deg2rad(36)])
     
     
    

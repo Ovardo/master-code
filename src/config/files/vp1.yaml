@@ -3,9 +3,9 @@ description: Example SLAM configuration for testing
 noise:
   odom_input_vel_std: 0.1
   odom_input_alpha_deg_std: 0.5
-  odom_output_x_std: 0.05
-  odom_output_y_std: 0.05
-  odom_output_yaw_deg_std: 0.1
+  odom_output_x_std: 0.32 # 0.32
+  odom_output_y_std: 0.32 # 0.32
+  odom_output_yaw_deg_std: 0.6 #0.6
   landmark_range_std: 0.2
   landmark_bearing_deg_std: 0.5
   init_pose_x_std: 0.001

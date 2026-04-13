@@ -60,7 +60,7 @@ class FactorGraphSLAM:
     
     def register_odometry(self, z_odo):
         
-        T_odo, J_odo_u = odom_from_u(z_odo[0], z_odo[1], z_odo[2])
+        T_odo, J_odo_u = odom_from_u(z_odo.ve, z_odo.alpha, z_odo.dt)
         
         Q_odo = J_odo_u @ self.Q_input @ J_odo_u.T + self.Q_output 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
@@ -8,8 +9,7 @@ from config import SLAMConfig
 from association import get_associatior
 from tentative import get_tentative_landmark_manager, TentativeLandmark
 from models import get_sensor_model 
-
-from timing_profiler import TimingProfiler
+from data_loader import LidarStepInput
 
 from utils.utils_gtsam import pose2_to_array, reorder_covariance_naive
 from utils.utils_math import make_psd
@@ -28,8 +28,8 @@ class FactorGraphSLAM:
         # self.profiler = get_profiler(cfg)
         
         # Graph and values
-        self.graph = gtsam.NonlinearFactorGraph() # TODO: remove this(?)
-        self.values = gtsam.Values()
+        # self.graph = gtsam.NonlinearFactorGraph() # TODO: remove this(?)
+        # self.values = gtsam.Values()
         
         # ISAM2 stuff 
         self.new_factors = gtsam.NonlinearFactorGraph()
@@ -46,8 +46,8 @@ class FactorGraphSLAM:
         self.R = cfg.noise.landmark_cov
 
         # State tracking
-        self.num_poses = 0 
-        self.num_landmarks = 0 
+        self._num_poses = 0 
+        self._num_landmarks = 0 
 
         # Initialize graph with prior on initial pose
         self._add_prior_factor(pose0)  # NOTE: could considering makig this public
@@ -57,24 +57,48 @@ class FactorGraphSLAM:
         self.Sigma_delta = np.zeros((3,3))
         
         self.poses_dr = [gtsam.Pose2(*pose0)]  # for dead reckoning trajectory
+
+
+        
+        # Logging and viualization data
+        self._counts_local_landmark: list = []
+        self._counts_landmark: list = []
+        
+        self._times_update: list = []
+        self._times_covariance_extraction: list = []
+        self._times_association: list = []
+        self._times_optimization: list = []
+        self._times_optimization2: list = []
     
-    def register_odometry(self, z_odo):
-        
+    def update(self, step: LidarStepInput):
+        start = time.perf_counter()
+        for z_odo in step.odometry:
+            self._register_odometry(z_odo)
+        self._register_scan(step.z_lsr)
+        self._times_update.append(time.perf_counter() - start)
+
+    def _register_odometry(self, z_odo):
         T_odo, J_odo_u = odom_from_u(z_odo.ve, z_odo.alpha, z_odo.dt)
-        
-        Q_odo = J_odo_u @ self.Q_input @ J_odo_u.T + self.Q_output 
+
+        Q_input = J_odo_u @ self.Q_input @ J_odo_u.T * 0
+        Q_odo = Q_input  + z_odo.dt * self.Q_output 
+        # Q_odo = z_odo.dt * self.Q_output 
 
         H1 = np.zeros((3,3), order='F')
         H2 = np.zeros((3,3), order='F')
     
         self.T_delta = self.T_delta.compose(T_odo, H1, H2)
         self.Sigma_delta = H1 @ self.Sigma_delta @ H1.T + H2 @ Q_odo @ H2.T
-        
 
-    def register_scan(self, z_lsr):
+    def _register_scan(self, z_lsr):
         
         # Incorprate preintegrated odometry and reset it
         T_pred = self._incorporate_odometry()
+
+        # Ensure preintegrated values are up to date before extracting covariance 
+        start = time.perf_counter()
+        self._optimize() 
+        self._times_optimization2.append(time.perf_counter() - start)
 
         z = detectTrees(z_lsr)
 
@@ -85,7 +109,9 @@ class FactorGraphSLAM:
         z_hat, z_hat_ids = self._get_predicted_measurements(T_pred)
         z_hat_gated, z_hat_gated_ids = self._gate_predicted_measurements(z_hat, z_hat_ids)
         
+        start = time.perf_counter()
         joint_covariance = self._extract_covariance(z_hat_gated_ids)
+        self._times_covariance_extraction.append(time.perf_counter() - start)
         
         innovation_covariance = self._compute_innovation_covariance(
             z_hat_gated_ids,
@@ -93,31 +119,36 @@ class FactorGraphSLAM:
             joint_covariance,
         )
     
+        start = time.perf_counter()
         asssociation = self._compute_association(
             z,
             z_hat_gated,
             z_hat_gated_ids,
             innovation_covariance,
         )
-
+        self._times_association.append(time.perf_counter() - start)
+        
         self._handle_association(z, asssociation)
         
+        start = time.perf_counter()
         self._optimize()
+        self._times_optimization.append(time.perf_counter() - start)
 
         
     def _add_prior_factor(self, pose0: np.ndarray):
         """Add prior factor for initial pose."""
         pose0 = gtsam.Pose2(*pose0)
         pose0_factor = gtsam.PriorFactorPose2(X(0), pose0, self.Sigma_prior)
-        self.graph.add(pose0_factor)
-        self.values.insert(X(0), pose0)
+        # self.graph.add(pose0_factor)
+        # self.values.insert(X(0), pose0) # TOOO: perhaps remove
         self.new_factors.add(pose0_factor)
         self.new_values.insert(X(0), pose0)
-        self.num_poses += 1 
+        self._num_poses += 1 
+        self._optimize()  # optimize immediately to initialize ISAM2 with the prior
     
     def _incorporate_odometry(self) -> gtsam.Pose2:
-        X_curr = X(self.num_poses - 1)
-        X_next = X(self.num_poses)
+        X_curr = X(self._num_poses - 1)
+        X_next = X(self._num_poses)
 
         # Add odometry factor
         odom_factor = gtsam.BetweenFactorPose2(
@@ -125,15 +156,16 @@ class FactorGraphSLAM:
             gtsam.noiseModel.Gaussian.Covariance(self.Sigma_delta)
         )
 
-        self.graph.add(odom_factor)
+        # self.graph.add(odom_factor)
         self.new_factors.add(odom_factor)
 
         # Predict next pose for initialization
-        T_curr = self.values.atPose2(X_curr)
+        # T_curr = self.values.atPose2(X_curr) # try self.isam.calculateEstimatePose2(X_curr)
+        T_curr = self.isam.calculateEstimatePose2(X_curr)
         T_next = T_curr.compose(self.T_delta )
-        self.values.insert(X_next, T_next)
+        # self.values.insert(X_next, T_next) 
         self.new_values.insert(X_next, T_next)
-        self.num_poses += 1 
+        self._num_poses += 1 
 
         # Update dead reckoning trajectory
         self.poses_dr.append(self.poses_dr[-1].compose(self.T_delta))
@@ -150,13 +182,14 @@ class FactorGraphSLAM:
     def _get_predicted_measurements(self, pose_pred: gtsam.Pose2) -> tuple[np.ndarray, np.ndarray]:
         """Get predicted measurements for all landmarks based on priori pose estimate and landmark estimates."""
         
-        M = self.num_landmarks
+        M = self._num_landmarks
 
         zbar = np.zeros((M,2), dtype=float)  
         zbar_ids = np.zeros(M, dtype=int) 
         
-        for j in range(self.num_landmarks):
-            lm = self.values.atPoint2(L(j))
+        for j in range(self._num_landmarks):
+            # lm = self.values.atPoint2(L(j)) 
+            lm = self.isam.calculateEstimatePoint2(L(j))
             zbar[j,0] = pose_pred.range(lm)
             zbar[j,1] = pose_pred.bearing(lm).theta() 
             zbar_ids[j] = j 
@@ -171,7 +204,9 @@ class FactorGraphSLAM:
             b = z[1] # bearing
             if r < self.cfg.sensor.max_range and np.abs(b) < np.deg2rad(self.cfg.sensor.fov_deg/2): # TODO: should maybe use a map config and not sensor.max_range
                 zbar_gated.append(z)
-                zbar_gated_ids.append(id)  
+                zbar_gated_ids.append(id) 
+
+        self._counts_local_landmark.append(len(zbar_gated)) # for logging
 
         return np.array(zbar_gated, dtype=float).reshape(-1, 2), \
                np.array(zbar_gated_ids, dtype=int)
@@ -187,10 +222,7 @@ class FactorGraphSLAM:
             return np.zeros([3,3]) 
         
         # NOTE: The order in which the keys are added can be important
-        query = [X(self.num_poses-1)] + [L(id) for id in zbar_ids]   
-        
-        # Ensure values are up to date before extracting covariance 
-        self._optimize() #TODO: find more efficient way
+        query = [X(self._num_poses-1)] + [L(id) for id in zbar_ids]   
         
         covariance = self.isam.jointMarginalCovariance(query)
         
@@ -207,7 +239,8 @@ class FactorGraphSLAM:
         cov_body: np.ndarray,
     ):
         """Compute measurement/innovation covariance for predicted measurements."""
-        m = np.array([self.values.atPoint2(L(id)) for id in zbar_ids]) # (M', 2)
+        # m = np.array([self.values.atPoint2(L(id)) for id in zbar_ids]) # (M', 2)
+        m = np.array([self.isam.calculateEstimatePoint2(L(id)) for id in zbar_ids]) # (M', 2)
         x = pose2_to_array(pose_pred) # (3,)
         
         S = self.sensor.predicted_measurement_covariance(x, m, cov_body)
@@ -266,13 +299,13 @@ class FactorGraphSLAM:
         associations: np.ndarray
     ):
         """Add factors only for measurements associated with confirmed landmarks."""
-        pose_key = X(self.num_poses-1)
+        pose_key = X(self._num_poses-1)
 
         for (r, b), a_j in zip(measurements, associations):
             meas_factor = gtsam.BearingRangeFactor2D(
                 pose_key, L(a_j), gtsam.Rot2(b), r, self.Sigma_meas
             )
-            self.graph.add(meas_factor)
+            # self.graph.add(meas_factor)
             self.new_factors.add(meas_factor)
             
     def _process_unassociated_measurements(
@@ -285,8 +318,9 @@ class FactorGraphSLAM:
         Returns a list of tentative landmarks that are now confirmed and ready
         to be promoted into the factor graph.
         """
-        pose_key = X(self.num_poses - 1)
-        current_pose = self.values.atPose2(pose_key)
+        pose_key = X(self._num_poses - 1)
+        # current_pose = self.values.atPose2(pose_key)
+        current_pose = self.isam.calculateEstimatePose2(pose_key)
 
         world_measurements = []
         raw_measurements = []
@@ -301,7 +335,7 @@ class FactorGraphSLAM:
             raw_measurements.append(np.array([r, b]))
 
         confirmed_tentatives = self.tentative.process_unassociated_measurements(
-            current_step=self.num_poses - 1,
+            current_step=self._num_poses - 1,
             world_measurements=world_measurements,
             raw_measurement=raw_measurements,
         )
@@ -318,12 +352,12 @@ class FactorGraphSLAM:
         - add factor to the pose of the most recent supporting observation
         """
         for tlm in confirmed_tentatives:
-            lm_id = self.num_landmarks
+            lm_id = self._num_landmarks
             lm_key = L(lm_id)
-            self.num_landmarks += 1
+            self._num_landmarks += 1
 
             lm_global = gtsam.Point2(float(tlm.position[0]), float(tlm.position[1]))
-            self.values.insert(lm_key, lm_global)
+            # self.values.insert(lm_key, lm_global)
             self.new_values.insert(lm_key, lm_global)
 
             # Add only one factor from the most recent supporting observation
@@ -351,7 +385,7 @@ class FactorGraphSLAM:
                     float(r),
                     self.Sigma_meas,
                 )
-                self.graph.add(meas_factor)
+                # self.graph.add(meas_factor)
                 self.new_factors.add(meas_factor)
 
             # Optional:
@@ -360,36 +394,50 @@ class FactorGraphSLAM:
     
     def _optimize(self) -> gtsam.Values:
         self.isam.update(self.new_factors, self.new_values)
-        self.values = self.isam.calculateEstimate()
+        # self.values = self.isam.calculateEstimate() # TODO: check if can use isam.calculateEstimatePose2 instead where needed, for efficiency. Would perhaps still need values for  
         self.new_factors = gtsam.NonlinearFactorGraph()
         self.new_values = gtsam.Values()
 
+
     def get_marginals(self) -> gtsam.Marginals:
         """Compute marginals for current estimate"""
-        return gtsam.Marginals(self.graph, self.values)
+        pass
+        # return gtsam.Marginals(self.graph, self.values)
+
 
     def get_current_pose(self) -> gtsam.Pose2:
         """Get current robot pose estimate"""
-        return self.values.atPose2(X(self.num_poses-1))
+        pass
+        # return self.values.atPose2(X(self._num_poses-1))
     
     def get_estimated_poses(self) -> np.ndarray:
-        """Get all pose estimates up to current step"""
-        return np.array([pose2_to_array(self.values.atPose2(X(k))) for k in range(self.num_poses)])
+        """Get all pose estimates"""
+        # return np.array([pose2_to_array(self.values.atPose2(X(k))) for k in range(self._num_poses)])
+        return np.array([pose2_to_array(self.isam.calculateEstimatePose2(X(k))) for k in range(self._num_poses)])
 
     def get_estimated_pose_covariances(self) -> list[np.ndarray]:
         """Get covariances for all pose estimates"""
         marginals = self.get_marginals()
-        return [marginals.marginalCovariance(X(k)) for k in range(self.num_poses)]
+        return [marginals.marginalCovariance(X(k)) for k in range(self._num_poses)]
 
     def get_estimated_landmarks(self) -> np.ndarray:
-        """Get all landmark estimates up to current step"""
-        return np.array([self.values.atPoint2(L(lm)) for lm in range(self.num_landmarks)])
+        """Get all landmark estimates"""
+        # return np.array([self.values.atPoint2(L(lm)) for lm in range(self._num_landmarks)])
+        return np.array([self.isam.calculateEstimatePoint2(L(lm)) for lm in range(self._num_landmarks)])
 
     def get_estimated_landmark_covariances(self) -> list[np.ndarray]:
         """Get covariances for all landmark estimates"""
         marginals = self.get_marginals()
-        return [marginals.marginalCovariance(L(lm)) for lm in range(self.num_landmarks)]
+        return [marginals.marginalCovariance(L(lm)) for lm in range(self._num_landmarks)]
 
-    def get_poses_dr(self) -> np.ndarray:
+    def get_dead_reckoning_poses(self) -> np.ndarray:
         """Get dead reckoning trajectory"""
         return np.array([pose2_to_array(pose) for pose in self.poses_dr])
+    
+    def get_num_poses(self) -> int:
+        return self._num_poses
+
+    def get_num_landmarks(self) -> int:
+        return self._num_landmarks
+    
+

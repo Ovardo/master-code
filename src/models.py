@@ -11,7 +11,9 @@ def get_sensor_model(cfg: SLAMConfig) -> RangeBearing:
     """Factory function to create a sensor model based on the config."""
     return RangeBearing(
         sigma_range=cfg.noise.landmark_range_std,
-        sigma_bearing=cfg.noise.landmark_bearing_rad_std
+        sigma_bearing=cfg.noise.landmark_bearing_rad_std,
+        max_range=cfg.sensor.max_range,
+        max_fov=np.deg2rad(cfg.sensor.fov_deg),
     )
 
 
@@ -21,8 +23,8 @@ class RangeBearing:
     """
     sigma_range: float
     sigma_bearing: float
-    #max_range: float = 7.5  # [m] (currently not used)
-    #max_fov: float = 2 * np.pi  # [rad] (currently not used)
+    max_range: float  # [m] (currently not used)
+    max_fov: float  # [rad] (currently not used)
     # sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
     
     def h_(self, x: np.ndarray, m_i: np.ndarray) -> np.ndarray:
@@ -41,9 +43,7 @@ class RangeBearing:
             the predicted measurement.
         """
         R_w_b = rotmat2(x[2])
-        delta_w = (
-            m_i - x[:2]
-        )  # TODO: add some handling if landmark is very close to robot position
+        delta_w = m_i - x[:2] # TODO: better handling of landmark close to robot pos
         delta_b = R_w_b.T @ delta_w
         r, theta = cartesian2polar(delta_b[0], delta_b[1])
         z_i = np.array([r, ssa(theta)])

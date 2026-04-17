@@ -100,7 +100,7 @@ class FactorGraphSLAM:
 
         z = detectTrees(z_lsr)
 
-        # filter away measurements with range > gate as often inprecise
+        # filter away measurements long rang measurements as often inprecise
         z = z[z[:, 0] < self.cfg.sensor.max_range] # TODO: this should perhanps be sepperate gate
 
         # Data assocation

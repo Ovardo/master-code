@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import numpy as np
 from utils.utils_math import cartesian2polar, rotmat2, ssa
-from config import SLAMConfig
+from config import SlamConfig
 
 
-def get_sensor_model(cfg: SLAMConfig) -> RangeBearing:
+def get_sensor_model(cfg: SlamConfig) -> RangeBearing:
     """Factory function to create a sensor model based on the config."""
     return RangeBearing(
         sigma_range=cfg.noise.landmark_range_std,

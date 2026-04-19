@@ -12,13 +12,13 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
 
-from config import SLAMConfig
+from config import SlamConfig
 from utils import utils_math
 
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
 
-def get_associatior(cfg: SLAMConfig) -> Associator:
+def get_associatior(cfg: SlamConfig) -> Associator:
     """Factory function to create an associator based on the config."""
     return Associator(
         method=cfg.association.method,

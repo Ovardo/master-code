@@ -1,1 +1,1 @@
-from .parser import SLAMConfig, load_config, save_config
+from .parser import SlamConfig

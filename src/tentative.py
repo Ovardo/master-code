@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from config import SLAMConfig
+from config import SlamConfig
 
 
 @dataclass
@@ -88,7 +88,7 @@ class TentativeLandmark:
         return max_possible_hits >= M
     
 
-def get_tentative_landmark_manager(cfg: SLAMConfig) -> TentativeLandmarkManager:
+def get_tentative_landmark_manager(cfg: SlamConfig) -> TentativeLandmarkManager:
     """Factory function to create a TentativeLandmarkManager based on the config."""
     return TentativeLandmarkManager(
         M=cfg.tentative.M,

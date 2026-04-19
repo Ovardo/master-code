@@ -1,5 +1,3 @@
-name: Hellow World
-description: description of the SLAM configuration and scenario
 noise:
   odom_input_vel_std: 0.1
   odom_input_alpha_deg_std: 0.5

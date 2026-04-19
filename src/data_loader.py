@@ -26,7 +26,7 @@ class LidarStepInput:
 class VictoriaParkLoader:
     """
     Iterator-based loader for Victoria Park SLAM dataset.  
-    Handles all timing synchronization between dead reckoning and laser measurements,
+    Handles timing synchronization between dead reckoning and laser measurements,
     """
     def __init__(self, data_folder: Path | None = None):
         if data_folder is None:
@@ -126,7 +126,7 @@ class VictoriaParkLoader:
     
     @property
     def odometry(self) -> np.ndarray:
-        """Return raw (unsynced) dead reckoning measurement as (k_odo, 3) array of [ve, alpha, t_dr]."""
+        """Return raw (unsynced) dead reckoning measurement as (K_odo, 3) array of [ve, alpha, t_odo]."""
         return np.column_stack([self.Ve_odo, self.Alpha_odo, self.T_odo])
 
     @property

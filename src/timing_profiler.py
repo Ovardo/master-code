@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+# TODO: see timer in miniSAM repo 
+
 
 @dataclass(slots=True)
 class TimingEvent:

@@ -25,6 +25,7 @@ from matplotlib.patches import Ellipse
 from matplotlib.animation import FuncAnimation
 
 from logger import SlamLogger
+from data_loader import VictoriaParkLoader
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +63,8 @@ def plot_trajectory(
     snapshot: dict,
     step_data: dict | None = None,
     show_covariances: bool = False,
+    show_gnss_overlay: bool = False,
+    gps_data: np.ndarray | None = None,
     cov_stride: int = 10,
 ) -> plt.Figure:
     """
@@ -75,6 +78,11 @@ def plot_trajectory(
         Dict from ``SlamLogger.load()`` — used only for metadata in the title.
     show_covariances:
         Overlay 2-σ ellipses on poses and landmarks.
+    show_gnss_overlay:
+        Overlay raw GPS positions from ``VictoriaParkLoader.gps``.
+    gps_data:
+        GPS array with shape (K, 3) as [x, y, t]. Used only when
+        ``show_gnss_overlay`` is True.
     cov_stride:
         Draw a pose ellipse every this many poses.
     """
@@ -86,11 +94,18 @@ def plot_trajectory(
 
     ax.plot(poses[:, 0], poses[:, 1],
             color="steelblue", lw=1.5, label="SLAM trajectory", zorder=2)
-    ax.scatter(*poses[0, :2],  color="green", s=80, zorder=5, label="Start")
-    ax.scatter(*poses[-1, :2], color="red",   s=80, zorder=5, label="End")
+    ax.scatter(poses[0, 0], poses[0, 1], color="green", s=80, zorder=5,
+            label="Start")
+    ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=80, zorder=5,
+            label="End")
     ax.scatter(landmarks[:, 0], landmarks[:, 1],
                c="tomato", marker="x", s=40, lw=1.2,
                label=f"Landmarks ({len(landmarks)})", zorder=3)
+
+    if show_gnss_overlay and gps_data is not None and gps_data.size > 0:
+        ax.scatter(gps_data[:, 0], gps_data[:, 1],
+                   c="gold", marker=".", s=24, alpha=0.6,
+                   label="GPS", zorder=1)
 
     if show_covariances:
         pose_covs = snapshot.get("poses_covariance", np.empty((0,)))
@@ -282,6 +297,8 @@ def save_all_figures(
     out_dir: Path,
     fmt: str = "pdf",
     show_covariances: bool = False,
+    show_gnss_overlay: bool = False,
+    gps_data: np.ndarray | None = None,
 ) -> None:
     """
     Produce and save every standard figure to ``out_dir``.
@@ -298,6 +315,7 @@ def save_all_figures(
     if final_snap is not None:
         figures["trajectory"] = plot_trajectory(
             final_snap, step_data, show_covariances=show_covariances,
+            show_gnss_overlay=show_gnss_overlay, gps_data=gps_data,
         )
 
     figures["timing_breakdown"]    = plot_timing_breakdown(step_data)
@@ -329,6 +347,7 @@ def load_and_plot_all(
     fmt: str = "pdf",
     show: bool = True,
     show_covariances: bool = False,
+    show_gnss_overlay: bool = False,
 ) -> tuple[dict, list[dict]]:
     """
     Load a run and produce every standard figure.
@@ -341,18 +360,26 @@ def load_and_plot_all(
     run_dir   = Path(run_dir)
     step_data = SlamLogger.load(run_dir)
     snapshots = SlamLogger.load_snapshots(run_dir)
+    gps_data  = None
+
+    if show_gnss_overlay:
+        gps_data = VictoriaParkLoader().gps
 
     if save_dir is None:
         save_dir = run_dir / "figures"
 
     save_all_figures(step_data, snapshots, save_dir, fmt=fmt,
-                     show_covariances=show_covariances)
+                     show_covariances=show_covariances,
+                     show_gnss_overlay=show_gnss_overlay,
+                     gps_data=gps_data)
 
     if show:
         final_snap = snapshots[-1] if snapshots else None
         if final_snap is not None:
             plot_trajectory(final_snap, step_data,
-                            show_covariances=show_covariances)
+                            show_covariances=show_covariances,
+                            show_gnss_overlay=show_gnss_overlay,
+                            gps_data=gps_data)
         plot_timing_breakdown(step_data)
         plot_timing_over_time(step_data)
         plot_timing_vs_landmarks(step_data)
@@ -372,17 +399,19 @@ def load_and_plot_all(
 
 if __name__ == "__main__":
     # if len(sys.argv) < 2:
-    #     print("Usage: python plot.py <run_dir> [--no-show] [--covariances] [--fmt pdf|png|svg]")
+    #     print("Usage: python plot.py <run_dir> [--no-show] [--covariances] [--gps] [--fmt pdf|png|svg]")
     #     sys.exit(1)
 
     # run_dir = Path(sys.argv[1])
     # show    = "--no-show"     not in sys.argv
     # covs    = "--covariances" in sys.argv
+    # gps     = "--gps"         in sys.argv
     # fmt     = "pdf"
     # for arg in sys.argv:
     #     if arg.startswith("--fmt="):
     #         fmt = arg.split("=", 1)[1]
-    run_dir = "/Users/ovar/Documents/Master/master_code/results/vp1_20260419_002502"
+    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260419_002502")
     fmt     = "pdf"
 
-    load_and_plot_all(run_dir, fmt=fmt, show=True, show_covariances=True)
+    load_and_plot_all(run_dir, fmt=fmt, show=True,
+                      show_covariances=True, show_gnss_overlay=True)

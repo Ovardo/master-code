@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 
+
 @dataclass(slots=True)
 class OdometryInput:
     timestamp: float
@@ -63,53 +64,51 @@ class VictoriaParkLoader:
 
     def iter_lidar_steps(self, max_steps: int | None = None):
         first_lidar_idx = 1  # idx 0 is a bit off in timing, so start from 1
-        last_time = self.T_odo[0]
 
         n_lidar = self.K_lsr - first_lidar_idx
         if max_steps is not None:
             n_lidar = min(n_lidar, max_steps)
+        if n_lidar <= 0:
+            return
 
-        k_odo = 1
+        k_lsr = first_lidar_idx
+        k_odo = 1  # odometry sample at k_odo describes interval [k_odo-1, k_odo]
+
+        # Start integration from the first odometry timestamp; carry this forward
+        # even when lidar cuts an odometry interval in two pieces.
+        interval_start_time = self.T_odo[0]
+        odometry: list[OdometryInput] = []
 
         for i in range(n_lidar):
-            k_lsr = first_lidar_idx + i
             t_scan = self.T_lsr[k_lsr]
 
-            odometry = []
+            # Consume complete or partial odometry intervals until we reach t_scan.
+            while k_odo < self.K_odo and interval_start_time < t_scan:
+                t_odo_k = self.T_odo[k_odo]
 
-            while k_odo < self.K_odo and self.T_odo[k_odo] <= t_scan:
-                dt = self.T_odo[k_odo] - last_time
+                if t_odo_k <= interval_start_time:
+                    raise ValueError(f"Non-increasing odometry timestamp at index {k_odo}")
+
+                segment_end = min(t_odo_k, t_scan)
+                dt = segment_end - interval_start_time
                 if dt < 0:
-                    raise ValueError(f"Negative dt at odometry index {k_odo}")
+                    raise ValueError(
+                        f"Negative dt while syncing lidar index {k_lsr} and odometry index {k_odo}"
+                    )
 
                 if dt > 0:
                     odometry.append(
                         OdometryInput(
-                            timestamp=self.T_odo[k_odo],
+                            timestamp=segment_end,
                             ve=self.Ve_odo[k_odo],
                             alpha=self.Alpha_odo[k_odo],
                             dt=dt,
                         )
                     )
-                    last_time = self.T_odo[k_odo]
 
-                k_odo += 1
-
-            # handle partial interval if scan falls between odometry timestamps
-            if last_time < t_scan and k_odo < self.K_odo:
-                dt = t_scan - last_time
-                if dt < 0:
-                    raise ValueError(f"Negative partial dt before lidar index {k_lsr}")
-
-                odometry.append(
-                    OdometryInput(
-                        timestamp=t_scan,
-                        ve=self.Ve_odo[k_odo-1],
-                        alpha=self.Alpha_odo[k_odo-1],
-                        dt=dt,
-                    )
-                )
-                last_time = t_scan
+                interval_start_time = segment_end
+                if np.isclose(interval_start_time, t_odo_k) or interval_start_time >= t_odo_k:
+                    k_odo += 1
 
             yield LidarStepInput(
                 step_index=i,
@@ -117,6 +116,10 @@ class VictoriaParkLoader:
                 odometry=odometry,
                 z_lsr=self.Z_lsr[k_lsr],
             )
+
+            # Start collecting odometry for the next lidar step.
+            odometry = []
+            k_lsr += 1
 
 
     @property
@@ -138,6 +141,8 @@ class VictoriaParkLoader:
     def initial_pose(self) -> np.ndarray:
         """Return initial position (x, y, theta) from GPS data in ENU frame."""
         return np.array([self.Lo_gps[1], self.La_gps[1], np.deg2rad(36)])
+    
+    
     
     
    

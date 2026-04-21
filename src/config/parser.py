@@ -24,9 +24,16 @@ class SlamConfig:
     tentative: TentativeLandmarkManagerConfig = field(default_factory=TentativeLandmarkManagerConfig)
     association: AssociationConfig = field(default_factory=AssociationConfig)
 
+    @staticmethod
+    def resolve_path(filename: str | Path) -> Path:
+        path = Path(filename)
+        if path.is_absolute() or path.parent != Path("."):
+            return path
+        return CONFIG_FILES_DIR / path.name
+
     @classmethod
-    def load(cls, filename: Path) -> SlamConfig:
-        path = CONFIG_FILES_DIR / Path(filename).name
+    def load(cls, filename: str | Path) -> SlamConfig:
+        path = cls.resolve_path(filename)
         if not path.exists():
             raise FileNotFoundError(f"Configuration file not found: {path}")
 
@@ -39,8 +46,9 @@ class SlamConfig:
         print(f"Loaded configuration from {path}")
         return config # type: ignore
 
-    def save(self, filename: str) -> None:
-        path = CONFIG_FILES_DIR / Path(filename).name
+    def save(self, filename: str | Path) -> None:
+        path = self.resolve_path(filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
         OmegaConf.save(OmegaConf.structured(self), path)
         print(f"Configuration saved to {path}")
 

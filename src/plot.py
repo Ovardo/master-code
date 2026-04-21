@@ -18,15 +18,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.patches import Ellipse
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FuncAnimation
+from matplotlib.patches import Ellipse
 
-from logger import SlamLogger
 from data_loader import VictoriaParkLoader
-
+from logger import SlamLogger
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -122,8 +121,6 @@ def plot_trajectory(
                                     ec="tomato", lw=0.5)
 
     title = "SLAM Trajectory"
-    if meta.get("config_tag"):
-        title += f" — {meta['config_tag']}"
     if meta.get("num_landmarks"):
         title += f"  |  {meta['num_landmarks']} landmarks"
     ax.set_title(title)
@@ -410,7 +407,7 @@ if __name__ == "__main__":
     # for arg in sys.argv:
     #     if arg.startswith("--fmt="):
     #         fmt = arg.split("=", 1)[1]
-    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260419_002502")
+    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260421_142156")
     fmt     = "pdf"
 
     load_and_plot_all(run_dir, fmt=fmt, show=True,

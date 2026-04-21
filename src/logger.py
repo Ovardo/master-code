@@ -3,7 +3,7 @@ SlamLogger — integrated logging, snapshot saving, and offline reloading.
 
 Saves to:
     <run_dir>/
-        metadata.json                  ← scalar metadata + config tag
+        metadata.json                  ← scalar metadata
         step_data.npz                  ← per-step timing and counts
         snapshots/
             step_000050.npz            ← full state at step 50
@@ -15,7 +15,7 @@ Usage (during a run):
     logger = SlamLogger(Path("results") / run_name, snapshot_every=50)
     slam   = FactorGraphSLAM(cfg=config, pose0=pose0, logger=logger)
     ...run slam...
-    logger.save(slam.get_snapshot(), config_tag="vp1")
+    logger.save(slam.get_snapshot())
 
 Usage (offline plotting):
     data      = SlamLogger.load(Path("results/vp1_20240417_120000"))
@@ -114,7 +114,7 @@ class SlamLogger:
     # Final save — call once after the run is complete
     # ------------------------------------------------------------------
 
-    def save(self, snapshot: dict[str, np.ndarray], config_tag: str = "") -> Path:
+    def save(self, snapshot: dict[str, np.ndarray]) -> Path:
         """
         Flush all accumulated step data and write the final snapshot.
 
@@ -122,8 +122,6 @@ class SlamLogger:
         ----------
         snapshot:
             The dict returned by ``slam.get_snapshot()``.
-        config_tag:
-            Human-readable label stored in metadata (e.g. ``"vp1"``).
 
         Returns
         -------
@@ -152,7 +150,6 @@ class SlamLogger:
         # ── metadata ───────────────────────────────────────────────────
         total_time = sum(self._times.get("total", [0.0]))
         metadata = {
-            "config_tag":     config_tag,
             "timestamp":      datetime.now().isoformat(timespec="seconds"),
             "snapshot_every": self.snapshot_every,
             "num_poses":      int(len(snapshot["poses"])),

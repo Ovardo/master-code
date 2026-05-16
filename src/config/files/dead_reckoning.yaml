@@ -1,0 +1,12 @@
+noise:
+  odom_input_vel_std: 0.1
+  odom_input_alpha_deg_std: 0.5
+  
+  odom_output_x_std: 0.32 
+  odom_output_y_std: 0.32 
+  odom_output_yaw_deg_std: 0.6
+   
+  init_pose_x_std: 0.001
+  init_pose_y_std: 0.001
+  init_pose_yaw_deg_std: 0.005
+

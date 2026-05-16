@@ -52,3 +52,6 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 - [ ] Refresh `src/toy_example.py` and the exploratory scripts in `src/div/` so they match the current config and data model.
 - [ ] pip install gtsam when bayesTree jointMarginalCovariance feature is in stable release, and remove the manual installation instructions.
 - [ ] Add better timing and performance benchmarks/profiling for the main SLAM loop, especially the association step and `isam2` updates.
+
+
+- [ ] Remove docs and packaging folder

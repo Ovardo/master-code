@@ -13,14 +13,14 @@ authors = [
   { name = "Ovar Skjevdal" },
 ]
 dependencies = [
-  "lap",
   "matplotlib",
   "numpy",
   "omegaconf",
   "scipy",
   "shapely",
   "tqdm",
-  "visgeom @ https://github.com/tussedrotten/visgeom/archive/master.zip"
+  "visgeom @ https://github.com/tussedrotten/visgeom/archive/master.zip",
+  "lap",
 ]
 
 [project.optional-dependencies]
@@ -32,10 +32,6 @@ dev = [
 
 [project.scripts]
 run-real-slam = "run_real_SLAM:main"
-visualize-result = "visualize:main"
-# run-sim-slam = "run_sim_SLAM:main"
-check-gtsam-install = "gtsam_diagnostics:main"
-
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -43,16 +39,12 @@ py-modules = [
   "association",
   "config",
   "data_loader",
-  "ekf_slam",
   "factor_graph_slam",
   "tentative",
   "run_real_SLAM",
-  "slam_types",
   "timing_profiler",
-  "visualize",
-  "visualization",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["models", "models.*", "plotting", "plotting.*", "simulation", "simulation.*", "utils", "utils.*"]
+include = ["models", "models.*", "plotting", "plotting.*", "utils", "utils.*"]

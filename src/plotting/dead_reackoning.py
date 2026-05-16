@@ -1,20 +1,20 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parents[1]))
 
 import gtsam
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
-
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FFMpegWriter, FuncAnimation
 from matplotlib.patches import Ellipse
 
 from config import SlamConfig
 from data_loader import VictoriaParkLoader
-from utils.utils_victoria_park import odom_from_u
+from utils.utils_victoria_park import relativePose
 
 matplotlib.use('qtagg')
 
@@ -68,8 +68,8 @@ def propagate_dead_reckoning(frame_stride: int = 1):
     dt = 0.025
 
     pose = gtsam.Pose2(loader.initial_pose)
-    cov = cfg.noise.init_pose_cov.copy()
-    cov_odom = cfg.noise.odom_output_cov 
+    cov = cfg.noise.init_pose_cov_matrix.copy()
+    cov_odom = cfg.noise.odom_cov_matrix 
 
     poses = [pose]
     covs = [cov.copy()]
@@ -80,7 +80,7 @@ def propagate_dead_reckoning(frame_stride: int = 1):
         velocity = odom[1]
         steering = odom[2]
         
-        odo, _ = odom_from_u(velocity, steering, dt)
+        odo, _ = relativePose(velocity, steering, dt)
         
         H1 = np.zeros((3, 3), order="F")
         H2 = np.zeros((3, 3), order="F")

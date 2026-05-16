@@ -3,15 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from utils.utils_math import cartesian2polar, rotmat2, ssa
+
 from config import SlamConfig
+from utils.utils_math import cartesian2polar, rotmat2, ssa
 
 
 def get_sensor_model(cfg: SlamConfig) -> RangeBearing:
     """Factory function to create a sensor model based on the config."""
     return RangeBearing(
-        sigma_range=cfg.noise.landmark_range_std,
-        sigma_bearing=cfg.noise.landmark_bearing_rad_std,
+        sigma_range=cfg.noise.sigma_range,
+        sigma_bearing=cfg.noise.sigma_bearing_rad,
         max_range=cfg.sensor.max_range,
         max_fov=np.deg2rad(cfg.sensor.fov_deg),
     )
@@ -203,6 +204,8 @@ class RangeBearing:
             the robot state
         m : np.ndarray, shape=(#landmarks, 2)
             landmarks stacked.
+        P : np.ndarray, shape=(3 + 2 * #landmarks, 3 + 2 * #landmarks)
+            covariance of the joint state (robot pose and landmarks).
 
         Returns
         -------
@@ -216,18 +219,6 @@ class RangeBearing:
 
         return S
 
-    # def predict_measurements(self, eta_pred, P_pred):
-    #     """Predict measurements to all landmarks."""
-    #     x_pred = eta_pred[:3]
-    #     landmarks = eta_pred[3:].reshape(-1, 2)
-
-    #     z_pred = self.h(x_pred[:3], landmarks.reshape(-1, 2))
-    #     H = self.H(x_pred, landmarks)
-    #     R = self.R(x_pred, landmarks)
-
-    #     S = H @ P_pred @ H.T + R
-
-    #     return z_pred, S
 
 
 

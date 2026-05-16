@@ -2,8 +2,6 @@
 
 This repository contains the code developed for **TTK4900 – Master’s Thesis in Engineering Cybernetics** at **NTNU**.
  
-Code related to the **Specialization Project (TTK4550)** is available in the branch `project-thesis-baseline`.
-
 
 ## Setup
 

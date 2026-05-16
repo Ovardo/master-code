@@ -7,14 +7,14 @@ import numpy as np
 class NoiseConfig:
     """Uncertainty parameters for SLAM.
 
-    The odometry model is:
+    The relative pose process model is:
         ΔT_k = f(u_k + γ_u,k) + γ_o,k
     where:
-        γ_u,k ~ N(0, Q_u): noise on raw odometry inputs (velocity, steering)
+        γ_u,k ~ N(0, Q_u): noise on control inputs (velocity, steering)
         γ_o,k ~ N(0, Q_o): additive noise on the resulting relative pose
 
     The resulting covariance used in preintegration is:
-        Q_k = J_u Q_u J_u^T + Q_o
+        Q_k = J_u Q_u J_u^T + Q_o % TODO: change if not the case
 
     The measurement model is:
         z_kj = h(x_k, m_j) + η_kj
@@ -22,30 +22,30 @@ class NoiseConfig:
         η_kj ~ N(0, R): noise on landmark observations (range, bearing)
 
     Attributes:
-        odom_input_vel_std (float): Standard deviation of raw odometry input noise in velocity [m/s].
-        odom_input_alpha_deg_std (float): Standard deviation of raw odometry input noise in steering angle [deg].
-        odom_output_x_std (float): Standard deviation of additive odometry output noise in relative x [m].
-        odom_output_y_std (float): Standard deviation of additive odometry output noise in relative y [m].
-        odom_output_yaw_deg_std (float): Standard deviation of additive odometry output noise in relative heading [deg].
-        landmark_range_std (float): Standard deviation of landmark observation noise in range [m].
-        landmark_bearing_deg_std (float): Standard deviation of landmark observation noise in bearing [deg].
-        init_pose_x_std (float): Standard deviation of initial pose uncertainty in x [m].
-        init_pose_y_std (float): Standard deviation of initial pose uncertainty in y [m].
-        init_pose_yaw_deg_std (float): Standard deviation of initial pose uncertainty in heading [deg].
+        sigma_velocity (float): Standard deviation of control input velocity [m/s].
+        sigma_steer_deg (float): Standard deviation of control input steering angle [deg].
+        sigma_odom_x (float): Standard deviation of additive odometry noise in relative x [m].
+        sigma_odom_y (float): Standard deviation of additive odometry noise in relative y [m].
+        sigma_odom_yaw_deg (float): Standard deviation of additive odometry noise in relative heading [deg].
+        sigma_range (float): Standard deviation of landmark observation noise in range [m].
+        sigma_bearing_deg (float): Standard deviation of landmark observation noise in bearing [deg].
+        sigma_init_pose_x (float): Standard deviation of initial pose uncertainty in x [m].
+        sigma_init_pose_y (float): Standard deviation of initial pose uncertainty in y [m].
+        sigma_init_pose_yaw_deg (float): Standard deviation of initial pose uncertainty in heading [deg].
     """
-    odom_input_vel_std: float = 0.1
-    odom_input_alpha_deg_std: float = 0.5
+    sigma_velocity: float = 0.1
+    sigma_steer_deg: float = 0.5
 
-    odom_output_x_std: float = 0.1
-    odom_output_y_std: float = 0.1
-    odom_output_yaw_deg_std: float = 0.1
+    sigma_odom_x: float = 0.1
+    sigma_odom_y: float = 0.1
+    sigma_odom_yaw_deg: float = 0.1
 
-    landmark_range_std: float = 0.2
-    landmark_bearing_deg_std: float = 1.0
+    sigma_range: float = 0.2
+    sigma_bearing_deg: float = 1.0
 
-    init_pose_x_std: float = 0.05
-    init_pose_y_std: float = 0.05
-    init_pose_yaw_deg_std: float = 0.5
+    sigma_init_pose_x: float = 0.05
+    sigma_init_pose_y: float = 0.05
+    sigma_init_pose_yaw_deg: float = 0.5
 
     def __post_init__(self) -> None:
         """Validate noise parameters."""
@@ -54,71 +54,55 @@ class NoiseConfig:
                 raise ValueError(f"Noise parameter {field_name} must be > 0, got {value}")
 
     @property
-    def odom_input_alpha_rad_std(self) -> float:
-        return np.deg2rad(self.odom_input_alpha_deg_std)
+    def sigma_steer_rad(self) -> float:
+        return np.deg2rad(self.sigma_steer_deg)
 
     @property
-    def odom_output_yaw_rad_std(self) -> float:
-        return np.deg2rad(self.odom_output_yaw_deg_std)
+    def sigma_odom_yaw_rad(self) -> float:
+        return np.deg2rad(self.sigma_odom_yaw_deg)
 
     @property
-    def landmark_bearing_rad_std(self) -> float:
-        return np.deg2rad(self.landmark_bearing_deg_std)
+    def sigma_bearing_rad(self) -> float:
+        return np.deg2rad(self.sigma_bearing_deg)
 
     @property
-    def init_pose_yaw_rad_std(self) -> float:
-        return np.deg2rad(self.init_pose_yaw_deg_std)
+    def sigma_init_pose_yaw_rad(self) -> float:
+        return np.deg2rad(self.sigma_init_pose_yaw_deg)
 
     @property
-    def odom_input_cov(self) -> np.ndarray:
-        """Return diagonal covariance matrix of raw odometry input noise in [v, alpha]."""
+    def control_input_cov_matrix(self) -> np.ndarray:
+        """Return diagonal covariance matrix of raw odometry input noise in [velocity, steering]."""
         return np.diag([
-            self.odom_input_vel_std ** 2,
-            self.odom_input_alpha_rad_std ** 2,
+            self.sigma_velocity ** 2,
+            self.sigma_steer_rad ** 2,
         ])
 
     @property
-    def odom_output_cov(self) -> np.ndarray:
+    def odom_cov_matrix(self) -> np.ndarray:
         """Return diagonal covariance matrix of additive odometry output noise in [x, y, yaw]."""
         return np.diag([
-            self.odom_output_x_std ** 2,
-            self.odom_output_y_std ** 2,
-            self.odom_output_yaw_rad_std ** 2,
+            self.sigma_odom_x ** 2,
+            self.sigma_odom_y ** 2,
+            self.sigma_odom_yaw_rad ** 2,
         ])
 
     @property
-    def landmark_cov(self) -> np.ndarray:
+    def range_bearing_cov_matrix(self) -> np.ndarray:
         """Return diagonal landmark observation covariance matrix in [range, bearing]."""
         return np.diag([
-            self.landmark_range_std ** 2,
-            self.landmark_bearing_rad_std ** 2,
+            self.sigma_range ** 2,
+            self.sigma_bearing_rad ** 2,
         ])
 
     @property
-    def init_pose_cov(self) -> np.ndarray:
+    def init_pose_cov_matrix(self) -> np.ndarray:
         """Return diagonal initial pose covariance matrix in [x, y, yaw]."""
         return np.diag([
-            self.init_pose_x_std ** 2,
-            self.init_pose_y_std ** 2,
-            self.init_pose_yaw_rad_std ** 2,
+            self.sigma_init_pose_x ** 2,
+            self.sigma_init_pose_y ** 2,
+            self.sigma_init_pose_yaw_rad ** 2,
         ])
 
-    @property
-    def gtsam_landmark_sigmas(self) -> np.ndarray:
-        """Return landmark noise sigmas for GTSAM in [bearing, range] order."""
-        return np.array([
-            self.landmark_bearing_rad_std,
-            self.landmark_range_std,
-        ], dtype=np.float64)
-
-    @property
-    def gtsam_prior_pose_sigmas(self) -> np.ndarray:
-        """Return prior pose sigmas for GTSAM in [x, y, yaw] order."""
-        return np.array([
-            self.init_pose_x_std,
-            self.init_pose_y_std,
-            self.init_pose_yaw_rad_std,
-        ], dtype=np.float64)
 
       
 @dataclass
@@ -129,7 +113,8 @@ class TentativeLandmarkManagerConfig:
         M (int): Hits needed to confirm a landmark.
         N (int): Max lifetime (in steps) of tentative landmark.
         gate (float): Euclidean distance threshold for associating unassociated 
-            measurements to existing tentative landmarks.
+            measurements to existing tentative landmarks. Quick fix to handle 
+            dynamic objects.
     """
     M: int = 3
     N: int = 4

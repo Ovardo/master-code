@@ -25,22 +25,17 @@ def plot_sensor_timing(lidar, odometry, gps, window_seconds=2):
 
     lsr_dt = np.diff(T_lsr)
     odo_dt = np.diff(T_odo)
-    gps_dt = np.diff(T_gps)
 
     avg_lsr_sample_time = np.mean(lsr_dt)
     avg_odo_sample_time = np.mean(odo_dt)
-    avg_gps_sample_time = np.mean(gps_dt)
 
     avg_lsr_freq = 1.0 / avg_lsr_sample_time
     avg_odo_freq = 1.0 / avg_odo_sample_time
-    avg_gps_freq = 1.0 / avg_gps_sample_time
 
     print(f"Average lidar sample time: {avg_lsr_sample_time:.4f} s")
     print(f"Average odometry sample time: {avg_odo_sample_time:.4f} s")
-    print(f"Average GPS sample time: {avg_gps_sample_time:.4f} s")
     print(f"Average lidar frequency: {avg_lsr_freq:.2f} Hz")
     print(f"Average odometry frequency: {avg_odo_freq:.2f} Hz")
-    print(f"Average GPS frequency: {avg_gps_freq:.2f} Hz")
 
     t0 = min(T_lsr[0], T_odo[0], T_gps[0])
     t1 = t0 + window_seconds
@@ -53,7 +48,7 @@ def plot_sensor_timing(lidar, odometry, gps, window_seconds=2):
 
     plt.vlines(T_lsr, 0, 1, color='r', label=f'Laser scan times ({avg_lsr_freq:.2f} Hz, {avg_lsr_sample_time*1000:.2f} ms)')
     plt.vlines(T_odo, 0, 0.5, color='b', label=f'Odometry times ({avg_odo_freq:.2f} Hz, {avg_odo_sample_time*1000:.2f} ms)')
-    plt.vlines(T_gps, 0, 1.5, color='g', label=f'GPS times ({avg_gps_freq:.2f} Hz, {avg_gps_sample_time*1000:.2f} ms)')
+    plt.vlines(T_gps, 0, 1.5, color='g', label=f'GPS times')
     plt.title("Timing of Laser Scans, Odometry, and GPS Measurements")
     plt.xlabel("Time (s)")
     plt.ylim(0, 1.75)

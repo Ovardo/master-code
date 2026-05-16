@@ -400,7 +400,7 @@ def load_and_plot_all(
 
 if __name__ == "__main__":
 
-    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260513_175021_forward")
+    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260516_205226")
     fmt     = "pdf"
 
     load_and_plot_all(run_dir, 

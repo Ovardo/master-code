@@ -2,6 +2,7 @@
 
 import time
 
+# TODO: see timer in miniSAM repo 
 
 def timeit(f):
     def wrap(*args, **kargs):

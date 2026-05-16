@@ -13,11 +13,11 @@ sensor:
   max_range: 45.0
   fov_deg: 220.0
 tentative:
-  M: 3
+  M: 1
   N: 4
   gate: 0.05
 association:
-  method: jcbb
-  alpha_individual: 0.9999
+  method: ml
+  alpha_individual: 0.999999
   alpha_joint: 0.99999
 

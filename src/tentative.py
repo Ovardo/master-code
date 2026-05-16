@@ -124,8 +124,8 @@ class TentativeLandmarkManager:
     def process_unassociated_measurements(
         self,
         current_step: int,
-        world_measurements: list[np.ndarray],
-        raw_measurement: list[np.ndarray]
+        measurements: np.ndarray,
+        world_positions: np.ndarray,
     ) -> list[TentativeLandmark]:
         """
         Main entry point for one timestep.
@@ -134,36 +134,36 @@ class TentativeLandmarkManager:
         ----------
         current_step : int
             Current timestep.
-        world_measurements : list[np.ndarray] (x,y)
+        world_positions : np.ndarray Mx2 (x,y)
             Unassociated measurements transformed to world-frame 2D positions.
-        raw_measurements : list[np.ndarray] (range, bearing)
-            The original raw measurements corresponding to world_measurements
+        measurements : np.ndarray Mx2 (range, bearing)
+            The original raw measurements corresponding to world_positions
 
         Returns
         -------
         confirmed_landmarks : list[TentativeLandmark]
             Tentative landmarks that are ready to be promoted to graph landmarks.
         """
-        if len(world_measurements) != len(raw_measurement):
-            raise ValueError("world_measurements and measurement_ids must have same length")
+        if world_positions.shape[0] != measurements.shape[0]:
+            raise ValueError("world_positions and measurement must have same length")
 
-        for z_world, z_raw in zip(world_measurements, raw_measurement):
-            z_world = np.asarray(z_world, dtype=float).reshape(2)
-            z_raw = np.asarray(z_raw, dtype=float).reshape(2)
+        for i in range(len(world_positions)):
+            W_lm = world_positions[i]
+            z = measurements[i]
 
-            match_idx = self._find_best_match(z_world, current_step)
+            match_idx = self._find_best_match(W_lm, current_step)
 
             if match_idx is None:
                 self._spawn_tentative(
                     step=current_step,
-                    position=z_world,
-                    measurement=z_raw,
+                    position=W_lm,
+                    measurement=z,
                 )
             else:
                 self.tentative_landmarks[match_idx].update(
                     step=current_step,
-                    new_position=z_world,
-                    measurement=z_raw,
+                    new_position=W_lm,
+                    measurement=z,
                 )
 
         confirmed = self._extract_confirmed(current_step)
@@ -230,8 +230,7 @@ class TentativeLandmarkManager:
         Remove tentative landmarks that can no longer reach M observations within
         their N-step confirmation window.
         """
-        self.tentative_landmarks = [
-            lm for lm in self.tentative_landmarks
+        self.tentative_landmarks = [lm for lm in self.tentative_landmarks
             if lm.can_still_be_confirmed(current_step, self.M, self.N)
         ]
 

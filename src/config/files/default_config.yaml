@@ -1,14 +1,14 @@
 noise:
-  odom_input_vel_std: 0.1
-  odom_input_alpha_deg_std: 0.5
-  odom_output_x_std: 0.1
-  odom_output_y_std: 0.1
-  odom_output_yaw_deg_std: 0.1
-  landmark_range_std: 0.2
-  landmark_bearing_deg_std: 1.0
-  init_pose_x_std: 0.05
-  init_pose_y_std: 0.05
-  init_pose_yaw_deg_std: 0.5
+  sigma_velocity: 0.1
+  sigma_steer_deg: 0.5
+  sigma_odom_x: 0.1
+  sigma_odom_y: 0.1
+  sigma_odom_yaw_deg: 0.1
+  sigma_range: 0.2
+  sigma_bearing_deg: 1.0
+  sigma_init_pose_x: 0.05
+  sigma_init_pose_y: 0.05
+  sigma_init_pose_yaw_deg: 0.5
 sensor:
   max_range: 50.0
   fov_deg: 250.0

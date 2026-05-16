@@ -1,5 +1,5 @@
 # Vicotria Park utils 
-# Shamelessly stolen from here: https://github.com/ramanans1/EKF-SLAM/blob/master/tree_extraction.py
+# Shamelessly stolen from here: 
 # Small modifications by Odin Aleksander Severinsen 
 
 from dataclasses import dataclass
@@ -11,18 +11,82 @@ import gtsam
 @dataclass(frozen=True)
 class Car:
     """
-    See data/victoria_park/info.txt & data/victoria_park/car.bmp for info.
+    See data/victoria_park/info.txt & data/victoria_park/car.bmp for rough blueprint.
     """
-    L: float = 2.83 # acxel distance
+    L: float = 2.83 # axle distance
     H: float = 0.76 # center to wheel encoder
-    a: float = 0.95 # laser distance in front of first axel
+    a: float = 0.95 # laser distance in front of first axle
     b: float = 0.5 # laser distance to the left of center
+
+
+def relativePose(vel_e, steer, dt):
+    """
+    Convert encoder-frame velocity and wheel steer angle to relative pose increment using the 
+    kinematic bicycle model. Also calculates the coresponding jacobian.
+
+    Parameters
+    ----------
+    vel_e : float
+        Forward velocity at encoder frame (left rear wheel)
+    steer : float
+        Wheel steer angle
+    dt : float
+        Time step duration
+
+    Returns
+    -------
+    odo : gtsam.Pose2
+        Relative odometry increment 
+    J_odo_u : np.ndarray, shape=(3,2)
+        Jacobian of odometry increment w.r.t. u = [vel_e, steer]
+    """
+    car = Car() # use default car parameters
+    
+    L = car.L
+    H = car.H
+
+    # ---- Convert velocity from encoder frame to body frame (center of rear axel)  ----
+    t = np.tan(steer)
+    sec2 = 1.0 / (np.cos(steer)**2)
+    k = H / L
+    d = 1.0 - k * t
+    vel_b = vel_e / d
+
+    omega = (vel_b / L) * t
+
+    # Planar body twist 
+    twist_b = np.array([vel_b, 0.0, omega], dtype=float)
+
+    # Integrate twist over time interval using Expmap 
+    odo = gtsam.Pose2.Expmap(twist_b*dt)
+    J_odo_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
+    
+    # Jacobian of twist w.r.t. u = [vel_e, steer] 
+    dvc_dve = 1.0 / d
+    dvc_da  = vel_e * (k * sec2) / (d*d)
+
+    drho1_dve = dt * dvc_dve
+    drho1_da  = dt * dvc_da
+
+    ddp_dve = (dt / L) * t * dvc_dve
+    ddp_da  = (dt / L) * (t * dvc_da + vel_b * sec2)
+
+    J_twist_u = np.array([
+        [drho1_dve, drho1_da],
+        [0.0,       0.0      ],
+        [ddp_dve,   ddp_da   ],
+    ], dtype=float)
+
+    # Jacobian of odometry increment w.r.t. u = [vel_e, steer]
+    J_odo_u = J_odo_twist @ J_twist_u
+
+    return odo, J_odo_u
 
 
 def detectTrees(scan):
     """
-    Detect trees in a single 180° laser scan (0.5° resoultion)
-    using the algorithm described in TODO
+    Convert lidar scan to tree detections in a single 180° laser scan (0.5° resolution)
+    Code taken from: https://github.com/ramanans1/EKF-SLAM/blob/master/tree_extraction.py
 
     Parameters
     ----------
@@ -217,108 +281,14 @@ def detectTrees(scan):
     angles = ssa(angles)  # wrap to [-pi, pi]
     diameters = dL5
 
-    # z = np.array([[ranges], [angles]]).squeeze().T
     z = np.vstack((ranges, angles)).T  # keeps the dims
-    # if z.shape != (2,): # to check for equality, all passed 19.oct 23:45 until k=3000
-    #     assert np.allclose(np.vstack((ranges, angles)).T, z)
-    # else:
-    #     assert np.allclose(np.vstack((ranges, angles)).T[0], z)
+
     return z
 
 
 
-def odom_from_u(vel_e, steer, dt):
-    """
-    Convert encoder-frame velocity and wheel steer angle to pose increment using the 
-    kinematic bicycle model. Also calculates the coresponding jacobian.
-
-    Parameters
-    ----------
-    vel_e : float
-        Forward velocity at encoder frame (left rear wheel)
-    steer : float
-        Wheel steer angle
-    dt : float
-        Time step duration
-
-    Returns
-    -------
-    odo : gtsam.Pose2
-        Relative odometry increment 
-    J_odo_u : np.ndarray, shape=(3,2)
-        Jacobian of odometry increment w.r.t. u = [vel_e, steer]
-    """
-    car = Car() # use default car parameters
-    
-    L = car.L
-    H = car.H
-
-    # ---- Convert velocity from encoder frame to body frame (center of rear axel)  ----
-    t = np.tan(steer)
-    sec2 = 1.0 / (np.cos(steer)**2)
-    k = H / L
-    d = 1.0 - k * t
-    vel_b = vel_e / d
-
-    omega = (vel_b / L) * t
-
-    # ---- Planar body twist ----
-    twist_b = np.array([vel_b, 0.0, omega], dtype=float)
-
-    # ---- Integrate twist of time interval, e.g. Expmap ----
-    odo = gtsam.Pose2.Expmap(twist_b*dt)
-    J_exp_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
-    
-    # ---- d(twist)/d[vel_e, steer] ----
-    dvc_dve = 1.0 / d
-    dvc_da  = vel_e * (k * sec2) / (d*d)
-
-    drho1_dve = dt * dvc_dve
-    drho1_da  = dt * dvc_da
-
-    ddp_dve = (dt / L) * t * dvc_dve
-    ddp_da  = (dt / L) * (t * dvc_da + vel_b * sec2)
-
-    J_twist_u = np.array([
-        [drho1_dve, drho1_da],
-        [0.0,       0.0      ],
-        [ddp_dve,   ddp_da   ],
-    ], dtype=float)
-
-    # ---- Chain rule ----
-    J_exp_u = J_exp_twist @ J_twist_u
-
-    return odo, J_exp_u
 
 
-# def odometry_func(v_e, steer, dt):
-#     car = Car() # use default car parameters
-    
-#     H = car.H
-#     L = car.L
-
-#     # R = L / np.tan(steer) # turning radius of the path (inf if steer=0)
-#     # v_e = v_c * (1 - H / R) --> v_c = v_e / (1 - H/R) = v_e / (1 - H * np.tan(steer) / L)
-#     # omega = v_c * np.tan(steer) / L  # angular velocity (omega = v/R = v_c * tan(steer) / L)
-#     # twist = np.array([v_c, 0.0, omega]) # [v_x, v_y, omega]
-#     # integrate twist to get odometry increment (using exact integration for unicycle model)
-    
-#     v_c = v_e / (1 - H * np.tan(steer) / L) 
-#     dp = dt * v_c * np.tan(steer) / L
-#     dx = dt * v_c * np.sinc(dp / np.pi)
-#     if np.abs(dp) < 0.001:
-#         dy = dt * v_c * (dp / 2 - dp ** 3 / 24 + dp ** 5 / 720) # Taylor approximation
-#     else:
-#         dy = dt * v_c * (1 - np.cos(dp)) / dp
-
-#     odo = np.array([dx, dy, dp])
-
-#     # import gtsam
-#     twist = np.array([v_c*dt, 0.0, dp]) # [v_x, v_y, omega*dt]
-#     odos = gtsam.Pose2.Expmap(twist)
-#     J_exp = gtsam.Pose2.ExpmapDerivative(twist)
-
-#     return odo
 
 
  

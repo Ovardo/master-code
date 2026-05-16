@@ -15,17 +15,18 @@ Or import and call functions from a notebook:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
-from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Ellipse
+from utils.utils_math import rotmat2
 
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
+
+matplotlib.use('qtagg')
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,7 +81,7 @@ def plot_trajectory(
     show_gnss_overlay:
         Overlay raw GPS positions from ``VictoriaParkLoader.gps``.
     gps_data:
-        GPS array with shape (K, 3) as [x, y, t]. Used only when
+        GPS array with shape (K, 3) as [t, x, y]. Used only when
         ``show_gnss_overlay`` is True.
     cov_stride:
         Draw a pose ellipse every this many poses.
@@ -102,7 +103,7 @@ def plot_trajectory(
                label=f"Landmarks ({len(landmarks)})", zorder=3)
 
     if show_gnss_overlay and gps_data is not None and gps_data.size > 0:
-        ax.scatter(gps_data[:, 0], gps_data[:, 1],
+        ax.scatter(gps_data[:, 1], gps_data[:, 2],
                    c="gold", marker=".", s=24, alpha=0.6,
                    label="GPS", zorder=1)
 
@@ -111,7 +112,13 @@ def plot_trajectory(
         lm_covs   = snapshot.get("landmarks_covariance", np.empty((0,)))
         if pose_covs.ndim == 3:
             for k in range(0, len(poses), cov_stride):
-                _confidence_ellipse_2d(ax, poses[k, :2], pose_covs[k][:2, :2],
+                pose = poses[k]
+                cov = pose_covs[k]
+                
+                translation = pose[:2]
+                cov_translation = rotmat2(pose[2]) @ cov[:2, :2] @ rotmat2(pose[2]).T # rotate to world frame
+                
+                _confidence_ellipse_2d(ax, translation, cov_translation,
                                     fc="steelblue", alpha=0.3,
                                     ec="steelblue", lw=0.5)
         if lm_covs.ndim == 3:
@@ -390,25 +397,14 @@ def load_and_plot_all(
     return step_data, snapshots
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # if len(sys.argv) < 2:
-    #     print("Usage: python plot.py <run_dir> [--no-show] [--covariances] [--gps] [--fmt pdf|png|svg]")
-    #     sys.exit(1)
 
-    # run_dir = Path(sys.argv[1])
-    # show    = "--no-show"     not in sys.argv
-    # covs    = "--covariances" in sys.argv
-    # gps     = "--gps"         in sys.argv
-    # fmt     = "pdf"
-    # for arg in sys.argv:
-    #     if arg.startswith("--fmt="):
-    #         fmt = arg.split("=", 1)[1]
-    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260421_142156")
+    run_dir = Path("/Users/ovar/Documents/Master/master_code/results/vp1_20260513_175021_forward")
     fmt     = "pdf"
 
-    load_and_plot_all(run_dir, fmt=fmt, show=True,
-                      show_covariances=True, show_gnss_overlay=True)
+    load_and_plot_all(run_dir, 
+                      fmt=fmt, 
+                      show=True,
+                      show_covariances=True, 
+                      show_gnss_overlay=True)

@@ -123,7 +123,7 @@ class FactorGraphSLAM:
             )
         )
     
-    def register_odometry(self, odometry: list[WheelOdometry]):
+    def _register_odometry(self, odometry: list[WheelOdometry]):
         Delta, Sigma = self._preintegrate_odometry(odometry)
         self._add_odometry_factor(Delta, Sigma)
         self._optimize()
@@ -131,12 +131,11 @@ class FactorGraphSLAM:
     def update(self, data: LidarStepInput):
         _t0 = time.perf_counter()
         
-        self.register_odometry(data.odometry)
+        self._register_odometry(data.odometry)
         self._register_scan(data.scan)
 
         self.logger.log_count("total_landmarks", self._n_landmarks)
         self.logger.maybe_log_snapshot(self._n_poses, self.get_snapshot)
-        
         self.logger.log_time("total", time.perf_counter() - _t0)
         self.logger.log_step(step=self._n_poses)
 
@@ -153,14 +152,10 @@ class FactorGraphSLAM:
         z_hat, z_hat_ids = self._get_predicted_measurements()
         
         cov_joint = self._extract_joint_covariance(z_hat_ids)
-        
-        cov_innovation = self._compute_innovation_covariance(
-            z_hat_ids, cov_joint,
-        )   
+
+        cov_innovation = self._compute_innovation_covariance(z_hat_ids, cov_joint)   
     
-        asssociation = self._compute_association(
-            z, z_hat, z_hat_ids, cov_innovation,
-        )
+        asssociation = self._compute_association(z, z_hat, z_hat_ids, cov_innovation)
         
         self._handle_association(z, asssociation)
 

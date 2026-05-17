@@ -23,18 +23,19 @@ def main():
     logger   = SlamLogger(run_path, snapshot_every=None)   
     shutil.copy2(config_path, run_path / config_path.name) # copy config to results for record-keeping
     
-    # Data & SLAM 
-    data_loader = VictoriaParkLoader()
+    # Data-loader 
+    loader = VictoriaParkLoader()
     
+    # SLAM system
     slam = FactorGraphSLAM(
         config=config, 
         logger=logger, 
-        initial_pose=data_loader.initial_pose,
+        initial_pose=loader.initial_pose,
     )
 
     K = 1000 # max number of scan steps to process
     
-    for step in tqdm(data_loader.iterate(max_steps=K), total=K-1, desc="SLAM"):
+    for step in tqdm(loader.iterate(max_steps=K), total=K-1, desc="SLAM"):
         slam.update(step)
 
     # ── save all logged data + final snapshot ─────────────────────────────────

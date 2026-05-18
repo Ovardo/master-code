@@ -66,8 +66,6 @@ class Associator:
     
 
 def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
-    #assert len(z.shape) == 1, "z must be in one row in JCBB"
-    #assert z.shape[0] % 2 == 0, "z must be equal in x and y"
     
     L = zbar.shape[0] # num predicted measurements 
     M = z.shape[0] # num actual measurements
@@ -91,7 +89,6 @@ def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
     j = 0
 
     a_best_ordered = _JCBBrec(z_ordered, zbar, S, alpha_joint, g2, j, a, ic_ordered, a_best)
-
     a_best[order] = a_best_ordered
 
     return a_best
@@ -202,11 +199,11 @@ def NIS(z, zbar, S, a):
     ass_idxs = a[is_ass].astype(int)
 
     # Extract associated measurements and predictions
-    ztest = z[is_ass]
-    zbartest = zbar[ass_idxs]
+    z_test = z[is_ass]
+    zbar_test = zbar[ass_idxs]
 
     # Innovation
-    v = ztest - zbartest
+    v = z_test - zbar_test
 
     # Wrap bearing (or angle) component in 2D form, then flatten once
     v[:, 1] = utils_math.ssa(v[:, 1])
@@ -220,10 +217,10 @@ def NIS(z, zbar, S, a):
     inds[1::2] = base + 1
 
     # Extract submatrix S_test
-    Stest = S[np.ix_(inds, inds)]
+    S_test = S[np.ix_(inds, inds)]
 
     # Since S is a covariance, it should be SPD -> use Cholesky for speed/stability
-    c, lower = cho_factor(Stest, overwrite_a=False, check_finite=False)
+    c, lower = cho_factor(S_test, overwrite_a=False, check_finite=False)
     y = cho_solve((c, lower), v, check_finite=False)
 
     # Quadratic form v^T S^{-1} v
@@ -235,7 +232,7 @@ def num_associations(array):
     return np.count_nonzero(array > -1)
 
 
-#
+# Not fully tested
 def ML_association(z, zbar, S, alpha_individual,
                    alpha_ambiguous=0.95,
                    outlier_cost=None):

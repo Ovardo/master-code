@@ -27,7 +27,7 @@ def test_pending_metrics_flush_to_compatible_step_data(tmp_path: Path) -> None:
     logger.log_count("local_landmarks", 4)
     logger.log_count("total_landmarks", 7)
     logger.log_value("innovation_norm", 2.5)
-    logger.log_step(step=2)
+    logger.flush_step(step=2)
     logger.save(_snapshot(num_poses=2, num_landmarks=7))
 
     data = SlamLogger.load(tmp_path)
@@ -45,7 +45,7 @@ def test_accumulated_timing_is_summed_within_step(tmp_path: Path) -> None:
 
     logger.log_time("optimization", 0.1, accumulate=True)
     logger.log_time("optimization", 0.25, accumulate=True)
-    logger.log_step(step=1)
+    logger.flush_step(step=1)
 
     assert np.isclose(logger._times["optimization"][0], 0.35)
 
@@ -55,8 +55,8 @@ def test_pending_buffer_clears_after_log_step(tmp_path: Path) -> None:
 
     logger.log_time("total", 1.0)
     logger.log_count("local_landmarks", 3)
-    logger.log_step(step=1)
-    logger.log_step(step=2)
+    logger.flush_step(step=1)
+    logger.flush_step(step=2)
 
     assert logger._pending_times == {}
     assert logger._pending_counts == {}
@@ -70,9 +70,9 @@ def test_missing_metrics_keep_columns_step_aligned(tmp_path: Path) -> None:
     logger = SlamLogger(tmp_path, snapshot_every=0)
 
     logger.log_time("total", 1.0)
-    logger.log_step(step=1)
+    logger.flush_step(step=1)
     logger.log_time("association", 0.2)
-    logger.log_step(step=2)
+    logger.flush_step(step=2)
     logger.save(_snapshot(num_poses=2))
 
     data = SlamLogger.load(tmp_path)

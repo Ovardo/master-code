@@ -2,6 +2,8 @@
 
 This repository contains the code developed for **TTK4900 – Master’s Thesis in Engineering Cybernetics** at **NTNU**. 
 
+![Trajectory](figures/master/trajectory.pdf)
+
 Description: TODO
  
 ## Setup

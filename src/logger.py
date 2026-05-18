@@ -85,7 +85,7 @@ class SlamLogger:
         """Record a generic per-step metric for the current step."""
         self._pending_values[name] = value
 
-    def log_step(
+    def flush_step(
         self,
         step: int,
         times: dict[str, float] | None = None,
@@ -118,13 +118,13 @@ class SlamLogger:
             destination=self._counts,
             pending=self._pending_counts,
             previous_steps=previous_steps,
-            missing_value=np.nan,
+            missing_value=0.0,
         )
         self._flush_pending_group(
             destination=self._values,
             pending=self._pending_values,
             previous_steps=previous_steps,
-            missing_value=np.nan,
+            missing_value=0.0,
         )
 
     @staticmethod
@@ -167,7 +167,7 @@ class SlamLogger:
     # Final save — call once after the run is complete
     # ------------------------------------------------------------------
 
-    def save(self, snapshot: dict[str, np.ndarray]) -> Path:
+    def save(self, snapshot: dict[str, np.ndarray], error: float) -> Path:
         """
         Flush all accumulated step data and write the final snapshot.
 
@@ -175,6 +175,8 @@ class SlamLogger:
         ----------
         snapshot:
             The dict returned by ``slam.get_snapshot()``.
+        error:
+            float returned by ``slam.get_error()``
 
         Returns
         -------
@@ -213,7 +215,9 @@ class SlamLogger:
             "snapshot_every": self.snapshot_every,
             "num_poses":      int(len(snapshot["poses"])),
             "num_landmarks":  int(len(snapshot["landmarks"])),
+            "total_error":    error,
             "total_time_s":   round(total_time, 3),
+            
         }
         (self.run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
@@ -228,13 +232,18 @@ class SlamLogger:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def load(run_dir: Path) -> dict:
+    def load_data(run_dir: Path) -> dict:
         """
         Load step-level data and metadata for a saved run.
 
         Returns a flat dict whose keys include:
-            ``steps``, ``time_total``, ``time_association``,
-            ``count_local_landmarks``, ``count_total_landmarks``,
+            ``steps``, 
+            ``scan_time``, 
+            ``time_total``, 
+            ``time_association``,
+            ``count_local_landmarks``, 
+            ``count_total_landmarks``,
+            ...
             ``metadata``
 
         For full-state arrays (poses, landmarks, covariances) load a

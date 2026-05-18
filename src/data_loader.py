@@ -2,7 +2,7 @@
 Victoria Park dataset loader module. Handles loading from mat-files, 
 unit conversion and synching of Lidar and odometry data
 """
-
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +21,7 @@ class WheelOdometry:
 class LidarStepInput:
     odometry: list[WheelOdometry]
     scan: np.ndarray
+    scan_time: float
 
 
 class VictoriaParkLoader:
@@ -116,7 +117,7 @@ class VictoriaParkLoader:
             )
         ]
 
-    def iterate(self, max_steps: int | None = None) -> LidarStepInput:
+    def iterate(self, max_steps: int | None = None) -> Iterator[LidarStepInput]:
         """
         Iterate over LiDAR-to-LiDAR steps.
         """
@@ -135,60 +136,31 @@ class VictoriaParkLoader:
             yield LidarStepInput(
                 odometry=odometry,
                 scan=self.lsr_scans[lidar_idx],
+                scan_time=self.lsr_timestamps[lidar_idx],
             )
 
     @property
     def lidar(self) -> np.ndarray:
-        """
-        Raw LiDAR data as:
-
-            [timestamp, range_0, range_1, ..., range_360]
-        """
-        return np.column_stack([self.lsr_timestamps, self.lsr_scans])
+        return np.column_stack(
+            [self.lsr_timestamps, self.lsr_scans]
+        )
 
     @property
     def odometry(self) -> np.ndarray:
-        """
-        Raw odometry data as:
-
-            [timestamp, velocity, steering]
-        """
         return np.column_stack(
-            [
-                self.odo_timestamps,
-                self.odo_velocity,
-                self.odo_steering,
-            ]
+            [self.odo_timestamps, self.odo_velocity, self.odo_steering]
         )
 
     @property
     def gps(self) -> np.ndarray:
-        """
-        Raw GPS data as:
-
-            [timestamp, longitude, latitude]
-        """
         return np.column_stack(
-            [
-                self.gps_timestamps,
-                self.gps_longitude,
-                self.gps_latitude,
-            ]
+            [self.gps_timestamps, self.gps_longitude, self.gps_latitude]
         )
 
     @property 
     def initial_pose(self) -> np.ndarray:
-        """
-        Initial pose in ENU frame, derived from first GPS measurement.
-        
-            [longitude, latitude, yaw]
-        """
         return np.array(
-            [
-                self.gps_longitude[0], 
-                self.gps_latitude[0], 
-                np.deg2rad(36)
-            ]
+            [self.gps_longitude[0], self.gps_latitude[0], np.deg2rad(36)]
         ) 
 
 

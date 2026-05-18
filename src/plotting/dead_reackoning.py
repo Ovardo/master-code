@@ -18,8 +18,6 @@ from utils.utils_victoria_park import relativePose
 
 matplotlib.use('qtagg')
 
-DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parents[2] / "videos" / "dead_reckoning_covariance.mp4"
-
 
 def covariance_ellipse_params(
     pose: gtsam.Pose2,
@@ -43,22 +41,6 @@ def covariance_ellipse_params(
     return tuple(pose.translation()), width, height, np.degrees(angle)
 
 
-def confidence_ellipse_2d(ax, 
-                          pose: gtsam.Pose2,
-                          cov: np.ndarray,
-                          scale: float = 1, 
-                          **kwargs) -> None:
-    """Draw a 2-D confidence ellipse for a 2×2 covariance matrix."""
-    center, width, height, angle = covariance_ellipse_params(pose, cov, scale)
-
-    ellipse = Ellipse(xy=center,
-                      width=width,
-                      height=height,
-                      angle=angle,
-                      **kwargs)
-    
-    ax.add_patch(ellipse)
-
 
 def propagate_dead_reckoning(frame_stride: int = 1):
     cfg = SlamConfig.load("dead_reckoning.yaml")
@@ -67,7 +49,7 @@ def propagate_dead_reckoning(frame_stride: int = 1):
     odometry = loader.odometry
     dt = 0.025
 
-    pose = gtsam.Pose2(loader.initial_pose)
+    pose = gtsam.Pose2(*loader.initial_pose)
     cov = cfg.noise.init_pose_cov_matrix.copy()
     cov_odom = cfg.noise.odom_cov_matrix 
 
@@ -162,10 +144,22 @@ def animate_covariance(
     plt.close(fig)
 
 
-def plot_covariance_snapshot(poses: list[gtsam.Pose2], covs: list[np.ndarray], **kwargs) -> None:
+    
+
+def main():
+    loader = VictoriaParkLoader()
+    gps = loader.gps
+    
+    poses, covs, times = propagate_dead_reckoning(frame_stride=25)
+    
+    # animate_covariance(poses, covs, times, Path("videos/dead_reckoning.mp4"), fps=60)
+    
     fig, ax = plt.subplots(figsize=(8, 8))
     
     ax.plot([p.x() for p in poses], [p.y() for p in poses], label="Dead reckoning path", color="tab:blue", linewidth=1.8)
+    ax.scatter(gps[:, 1], gps[:, 2], marker='.', s=18, c="tab:orange", label="GPS measurements")
+
+    ax.legend(loc="lower right")
 
     if len(poses) >= 1:
         start = poses[0]
@@ -173,35 +167,14 @@ def plot_covariance_snapshot(poses: list[gtsam.Pose2], covs: list[np.ndarray], *
         end = poses[-1]
         ax.plot(end.x(), end.y(), marker='o', color='red', markersize=8, label='End')
     
-    
-    # for pose, cov in zip(poses, covs):
-    #     confidence_ellipse_2d(
-    #         ax,
-    #         pose,
-    #         cov,
-    #         edgecolor='red',
-    #         facecolor='none',
-    #         label='Pose Uncertainty' if pose == poses[0] else '',
-    #     )
-
-    plt.axis('equal')
-    plt.xlabel("x [m]")
-    plt.ylabel("y [m]")
-    plt.title("Dead Reckoning Path")
-    plt.grid(True, alpha=0.3)
+    ax.set_title("Dead Reckoning Path vs GPS Measurements")
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.axis("equal")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
     plt.legend()
     plt.show()
-    
-
-
-
-def main():
-    
-    poses, covs, times = propagate_dead_reckoning(frame_stride=25)
-    # animate_covariance(poses, covs, times, args.output, fps=args.fps)
-    # print(f"Saved covariance animation to {args.output}")
-
-    plot_covariance_snapshot(poses, covs)
 
 
 if __name__ == "__main__": 

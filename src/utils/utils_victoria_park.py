@@ -1,6 +1,4 @@
-# Vicotria Park utils 
-# Shamelessly stolen from here: 
-# Small modifications by Odin Aleksander Severinsen 
+# TODO: Odin Aleksander Severinsen 
 
 from dataclasses import dataclass
 from utils.utils_math import ssa
@@ -11,7 +9,7 @@ import gtsam
 @dataclass(frozen=True)
 class Car:
     """
-    See data/victoria_park/info.txt & data/victoria_park/car.bmp for rough blueprint.
+    See data/victoria_park/raw/info.txt & data/victoria_park/raw/car.bmp for schematic.
     """
     L: float = 2.83 # axle distance
     H: float = 0.76 # center to wheel encoder

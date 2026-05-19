@@ -8,7 +8,7 @@ from config import SlamConfig
 from logger import SlamLogger
 from plot import SlamPlotter
 from data_loader import VictoriaParkLoader
-from factor_graph_slam import FactorGraphSLAM
+from slam import FactorGraphSLAM
 
 
 def main() -> None:

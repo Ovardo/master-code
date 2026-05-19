@@ -10,7 +10,7 @@ from association import get_associatior
 from config import SlamConfig
 from data_loader import LidarStepInput, WheelOdometry
 from logger import SlamLogger
-from models import get_sensor_model
+from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
 from utils.utils_gtsam import pose2_to_array, reorder_covariance_naive
 from utils.utils_math import make_psd

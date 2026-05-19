@@ -1,30 +1,6 @@
-"""
-Plot saved SLAM runs.
-
-Examples
---------
-From a script or notebook:
-
-    from plot import SlamPlotter
-
-    plotter = SlamPlotter.from_run("runs/20260516_205226", load_gps=True)
-    plotter.trajectory(covariances=True, gnss=True)
-    plotter.save_all(fmt="pdf", covariances=True, gnss=True)
-
-    comparison = SlamRunComparison.from_runs(["runs/run_a", "runs/run_b"])
-    comparison.timing_total()
-    comparison.save_all()
-
-From the command line:
-
-    python src/plot.py runs/20260516_205226 --covariances --gnss --fmt pdf
-"""
-
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -36,15 +12,9 @@ from logger import SlamLogger
 from utils import rotmat2
 
 
-def _confidence_ellipse_2d(
-    ax,
-    center: np.ndarray,
-    cov: np.ndarray,
-    scale: float = 1.0,
-    **kwargs,
-) -> None:
+def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, **kwargs) -> Ellipse:
     """Draw a 95% confidence ellipse for a 2D covariance matrix."""
-    chi2_95_2d = 2.447746830681
+    chi2_95_2d: float = 2.447746830681
 
     eigvals, eigvecs = np.linalg.eigh(cov)
     eigvals = np.maximum(eigvals, 0.0)
@@ -52,404 +22,357 @@ def _confidence_ellipse_2d(
     width = np.sqrt(eigvals[0]) * 2 * chi2_95_2d * scale
     height = np.sqrt(eigvals[1]) * 2 * chi2_95_2d * scale
 
-    ellipse = Ellipse(
+    return Ellipse(
         xy=tuple(center),
         width=width,
         height=height,
         angle=np.degrees(angle),
         **kwargs,
     )
-    ax.add_patch(ellipse)
 
-
-
-
-
-@dataclass(slots=True)
-class SlamRun:
-    """Pure data container. No matplotlib dependency."""
-    run_dir:   Path
-    step_data: dict
-    snapshots: list[dict]
-    gps:  np.ndarray | None = None
-    label: str = ""          # used as legend label in comparisons
-
-    @classmethod
-    def load(cls, run_dir: Path | str, load_gps: bool = False, label: str | None = None) -> SlamRun:
-        run_dir = Path(run_dir)
-        return cls(
-            run_dir=run_dir,
-            step_data=SlamLogger.load(run_dir),
-            snapshots=SlamLogger.load_snapshots(run_dir),
-            gps_data=VictoriaParkLoader().gps if load_gps else None,
-            label=label or run_dir.name,
+def draw_pose_covariances(ax, poses: np.ndarray, poses_cov: np.ndarray, cov_stride: int = 10) -> None:
+    for pose, cov in zip(poses[::cov_stride], poses_cov[::cov_stride]):
+        # Rotate the translational covariance ellipse to world frame
+        R = rotmat2(pose[2])
+        xy_cov = R @ cov[:2, :2] @ R.T
+        
+        ax.add_patch(
+            confidence_ellipse_2d(pose[:2], xy_cov, fc="steelblue", alpha=0.3, ec="steelblue", lw=0.5)
         )
 
-    @property
-    def final_snapshot(self) -> dict:
-        return self.snapshots[-1]
-
-    @property
-    def metadata(self) -> dict:
-        return self.step_data.get("metadata", {})
-
-
-@dataclass(slots=True)
-class SlamPlotter:
-    """Convenience API for plotting one saved SLAM run."""
-
-    run_dir: Path
-    step_data: dict
-    snapshots: list[dict]
-    gps_data: np.ndarray | None = None
-
-    @classmethod
-    def from_run(cls, run_dir: Path | str, load_gps: bool = False) -> "SlamPlotter":
-        run_dir = Path(run_dir)
-        gps_data = VictoriaParkLoader().gps if load_gps else None
-        return cls(
-            run_dir=run_dir,
-            step_data=SlamLogger.load(run_dir),
-            snapshots=SlamLogger.load_snapshots(run_dir),
-            gps_data=gps_data,
+def draw_landmark_covariances(ax, landmarks: np.ndarray, landmarks_cov: np.ndarray, alpha: float, lw: float) -> None:
+    for lm, cov in zip(landmarks, landmarks_cov):
+        ax.add_patch(
+            confidence_ellipse_2d(lm, cov, fc="tomato", alpha=alpha, ec="tomato", lw=lw)
         )
 
-    @property
-    def final_snapshot(self) -> dict:
-        return self.snapshots[-1]
+def plot_estimate(
+    poses: np.ndarray | None = None,
+    poses_cov: np.ndarray | None = None,
+    poses_cov_stride: int = 10,
+    landmarks: np.ndarray | None = None,
+    landmarks_cov: np.ndarray | None = None,
+    gnss: np.ndarray | None = None,
+) -> plt.Figure:
+    """Plot the trajectory, landmarks, and optional covariances and gnss."""
+    
+    fig, ax = plt.subplots(figsize=(10, 10))
 
-    def trajectory(
-        self,
-        covariances: bool = False,
-        gnss: bool = False,
-        cov_stride: int = 10,
-    ) -> plt.Figure:
-        """Plot the final trajectory, landmarks, and optional overlays."""
-        snapshot = self.final_snapshot
-        poses = snapshot["poses"]
-        landmarks = snapshot["landmarks"]
-        meta = self.step_data.get("metadata", {})
+    if poses is not None:
+        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", lw=1.5, label="Trajectory", zorder=2,)
+        ax.scatter(poses[0, 0], poses[0, 1], color="green", s=80, zorder=5, label="Start")
+        ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=80, zorder=5, label="End")
 
-        fig, ax = plt.subplots(figsize=(10, 10))
+        if poses_cov is not None:
+            draw_pose_covariances(ax, poses, poses_cov, cov_stride=poses_cov_stride)
 
-        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", lw=1.5, label="SLAM trajectory", zorder=2,)
-        ax.scatter(poses[0, 0],poses[0, 1],color="green",s=80,zorder=5,label="Start")
-        ax.scatter( poses[-1, 0], poses[-1, 1], color="red", s=80, zorder=5, label="End")
-        ax.scatter( landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", s=40, lw=1.2, label=f"Landmarks ({len(landmarks)})", zorder=3,)
+    if landmarks is not None:
+        ax.scatter(landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", s=40, lw=1.2, label=f"Landmarks ({len(landmarks)})", zorder=3,)
 
-        if gnss and self.gps_data is not None:
-            ax.scatter(self.gps_data[:, 1],self.gps_data[:, 2],c="gold",marker=".",s=24,alpha=0.6,label="GPS",zorder=1)
+        if landmarks_cov is not None:
+            draw_landmark_covariances(ax, landmarks, landmarks_cov, alpha=0.3, lw=0.5)
 
-        if covariances:
-            self._draw_trajectory_covariances(ax, snapshot, cov_stride)
-
-        title = "SLAM Trajectory"
-        if meta.get("num_landmarks"):
-            title += f" | {meta['num_landmarks']} landmarks"
-
-        ax.set_title(title)
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.set_aspect("equal")
-        ax.legend()
-        ax.grid(True, lw=0.4)
-        fig.tight_layout()
-        return fig
-
-    def timing_breakdown(self) -> plt.Figure:
-        """Plot per-step and cumulative processing time breakdown."""
-        t_cov = self.step_data["time_covariance_extraction"]
-        t_assoc = self.step_data["time_association"]
-        t_opt = self.step_data["time_optimization"]
-        t_total = self.step_data["time_total"]
-        other = np.maximum(t_total - (t_cov + t_assoc + t_opt), 0.0)
-
-        steps = self.step_data["steps"]
-        labels = ["Covariance extraction", "Association", "Optimisation", "Other"]
-        parts = [t_cov, t_assoc, t_opt, other]
-
-        fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-
-        axes[0].stackplot(steps, *parts, labels=labels)
-        axes[0].set_ylabel("Time (s)")
-        axes[0].set_title("Per-step Processing Time Breakdown")
-        axes[0].legend(loc="upper left", fontsize=8)
-        axes[0].grid(True, lw=0.4)
-
-        axes[1].stackplot(steps, *[np.cumsum(p) for p in parts], labels=labels)
-        axes[1].set_ylabel("Cumulative time (s)")
-        axes[1].set_xlabel("Scan step")
-        axes[1].set_title("Cumulative Processing Time Breakdown")
-        axes[1].legend(loc="upper left", fontsize=8)
-        axes[1].grid(True, lw=0.4)
-
-        fig.tight_layout()
-        return fig
-
-    def timing_over_time(self) -> plt.Figure:
-        """Plot total step time and in-view predicted landmark count."""
-        steps = self.step_data["steps"]
-        t_total = self.step_data["time_total"]
-        n_local = self.step_data["count_local_landmarks"]
-
-        fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
-
-        axes[0].plot(steps, t_total, lw=0.8, color="steelblue")
-        axes[0].set_ylabel("Time (s)")
-        axes[0].set_yscale("log")
-        axes[0].set_title("SLAM Step Processing Time")
-        axes[0].grid(True, which="both", lw=0.4)
-
-        axes[1].plot(steps, n_local, lw=0.8, color="tomato")
-        axes[1].set_ylabel("In-view landmarks")
-        axes[1].set_xlabel("Scan step")
-        axes[1].set_title("In-view Predicted Landmark Count")
-        axes[1].grid(True, lw=0.4)
-
-        fig.tight_layout()
-        return fig
-
-    def timing_vs_landmarks(self) -> plt.Figure:
-        """Plot total step time against in-view landmark count."""
-        n_local = self.step_data["count_local_landmarks"]
-        t_total = self.step_data["time_total"]
-
-        fig, ax = plt.subplots(figsize=(7, 5))
-        ax.scatter(n_local, t_total, alpha=0.4, s=12, color="steelblue")
-        ax.set_xlabel("In-view landmark count")
-        ax.set_ylabel("Step processing time (s)")
-        ax.set_title("Processing Time vs. In-view Landmarks")
-        ax.grid(True, lw=0.4)
-        fig.tight_layout()
-        return fig
-
-    def landmark_growth(self) -> plt.Figure:
-        """Plot confirmed landmark count over time."""
-        steps = self.step_data["steps"]
-        n_landmarks = self.step_data["count_total_landmarks"]
-
-        fig, ax = plt.subplots(figsize=(9, 4))
-        ax.plot(steps, n_landmarks, lw=1.2, color="steelblue")
-        ax.set_xlabel("Scan step")
-        ax.set_ylabel("Confirmed landmarks")
-        ax.set_title("Landmark Count Over Time")
-        ax.grid(True, lw=0.4)
-        fig.tight_layout()
-        return fig
+    if gnss is not None:
+        ax.scatter(gnss[:, 1], gnss[:, 2], c="gold", marker=".", s=24, alpha=0.6, label="GNSS", zorder=1)
+    
+    ax.set_title("MAP Estimate")
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_aspect("equal")
+    ax.legend()
+    ax.grid(True, lw=0.4)
+    fig.tight_layout()
+    return fig
 
 
+def plot_timing_breakdown(
+    steps: np.ndarray,
+    t_cov: np.ndarray,
+    t_assoc: np.ndarray,
+    t_opt: np.ndarray,
+    t_total: np.ndarray,
+) -> plt.Figure:
+    """Plot per-step and cumulative processing time breakdown."""
+    
+    t_cov   = np.nan_to_num(t_cov,   nan=0.0)
+    t_assoc = np.nan_to_num(t_assoc, nan=0.0)
+    t_opt   = np.nan_to_num(t_opt,   nan=0.0)
+    t_total = np.nan_to_num(t_total, nan=0.0)
 
-    def standard_figures(
-        self,
-        covariances: bool = False,
-        cov_stride: int = 10,
-        gnss: bool = False,
-    ) -> dict[str, plt.Figure]:
-        """Create the default figure set."""
-        return {
-            "trajectory": self.trajectory(covariances=covariances, gnss=gnss, cov_stride=cov_stride),
-            "timing_breakdown": self.timing_breakdown(),
-            "timing_over_time": self.timing_over_time(),
-            "timing_vs_landmarks": self.timing_vs_landmarks(),
-            "landmark_growth": self.landmark_growth(),
-        }
+    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt), 0.0)
 
-    def save_all(
-        self,
-        out_dir: Path | str | None = None,
-        fmt: str = "pdf",
-        covariances: bool = False,
-        gnss: bool = False,
-        cov_stride: int = 10,
-    ) -> list[Path]:
-        """Save the default figure set and close the figures."""
-        out_dir = Path(out_dir) if out_dir is not None else self.run_dir / "figures"
-        out_dir.mkdir(parents=True, exist_ok=True)
+    labels = ["Covariance extraction", "Association", "Optimisation", "Other"]
+    parts = [t_cov, t_assoc, t_opt, t_other]
 
-        paths = []
-        figures = self.standard_figures(covariances=covariances, gnss=gnss, cov_stride=cov_stride)
-        for name, fig in figures.items():
-            path = out_dir / f"{name}.{fmt}"
-            fig.savefig(path, dpi=300, bbox_inches="tight")
-            plt.close(fig)
-            paths.append(path)
+    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
 
-        print(f"[plot] Saved {len(paths)} figures to {out_dir.resolve()}")
-        return paths
+    axes[0].stackplot(steps, *parts, labels=labels)
+    axes[0].set_ylabel("Time (s)")
+    axes[0].set_title("Per-step Processing Time Breakdown")
+    axes[0].legend(loc="upper left", fontsize=8)
+    axes[0].grid(True, lw=0.4)
 
-    def show_all(self, covariances: bool = False, gnss: bool = False, cov_stride: int = 10) -> None:
-        """Show the default figure set."""
-        self.standard_figures(covariances=covariances, cov_stride=cov_stride, gnss=gnss)
+    axes[1].stackplot(steps, *[np.cumsum(p) for p in parts], labels=labels)
+    axes[1].set_ylabel("Cumulative time (s)")
+    axes[1].set_xlabel("Scan step")
+    axes[1].set_title("Cumulative Processing Time Breakdown")
+    axes[1].legend(loc="upper left", fontsize=8)
+    axes[1].grid(True, lw=0.4)
+
+    fig.tight_layout()
+    return fig
+
+def plot_timing_over_time(
+    steps: np.ndarray,
+    t_total: np.ndarray,
+    n_local: np.ndarray
+) -> plt.Figure:
+    """Plot total step time and in-view predicted landmark count."""
+   
+    fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
+
+    axes[0].plot(steps, t_total, lw=0.8, color="steelblue")
+    axes[0].set_ylabel("Time (s)")
+    axes[0].set_yscale("log")
+    axes[0].set_title("SLAM Step Processing Time")
+    axes[0].grid(True, which="both", lw=0.4)
+
+    axes[1].plot(steps, n_local, lw=0.8, color="tomato")
+    axes[1].set_ylabel("In-view landmarks")
+    axes[1].set_xlabel("Scan step")
+    axes[1].set_title("In-view Predicted Landmark Count")
+    axes[1].grid(True, lw=0.4)
+
+    fig.tight_layout()
+    return fig
+
+def plot_timing_vs_landmarks(
+    n_local: np.ndarray,
+    t_total: np.ndarray,
+) -> plt.Figure:
+    """Plot total step time against in-view landmark count."""
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.scatter(n_local, t_total, alpha=0.4, s=12, color="steelblue")
+    ax.set_xlabel("In-view landmark count")
+    ax.set_ylabel("Step processing time (s)")
+    ax.set_title("Processing Time vs. In-view Landmarks")
+    ax.grid(True, lw=0.4)
+    fig.tight_layout()
+    return fig
+
+def plot_landmark_growth(
+    steps: np.ndarray, 
+    n_landmarks: np.ndarray
+) -> plt.Figure:
+    """Plot confirmed landmark count over time."""
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(steps, n_landmarks, lw=1.2, color="steelblue")
+    ax.set_xlabel("Scan step")
+    ax.set_ylabel("Confirmed landmarks")
+    ax.set_title("Landmark Count Over Time")
+    ax.grid(True, lw=0.4)
+    fig.tight_layout()
+    return fig
+
+def plot_error(
+    steps: np.ndarray,
+    error: np.ndarray,
+    n_factors: np.ndarray,
+) -> plt.Figure:
+    """Plot the graph error over steps."""
+    mask = ~np.isnan(error)
+    error_avg = error[mask] / n_factors[mask] 
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(steps[mask], error_avg, lw=1.2, color="steelblue")
+    ax.set_xlabel("Scan step")
+    ax.set_ylabel("Average Factor Graph Error (mahalanobis / num_factors)")
+    ax.set_title("SLAM Error Over Time")
+    ax.grid(True, lw=0.4)
+    fig.tight_layout()
+    return fig
+
+
+def _nearest_indices(query_times: np.ndarray, reference_times: np.ndarray) -> np.ndarray:
+    """Return index of the nearest reference time for each query time."""
+    insertion_indices = np.searchsorted(reference_times, query_times)
+    right_indices = np.clip(insertion_indices, 0, len(reference_times) - 1)
+    left_indices = np.clip(insertion_indices - 1, 0, len(reference_times) - 1)
+
+    left_dt = np.abs(query_times - reference_times[left_indices])
+    right_dt = np.abs(query_times - reference_times[right_indices])
+
+    return np.where(left_dt <= right_dt, left_indices, right_indices)
+
+
+def plot_gnss_pose_error(
+    gnss: np.ndarray,
+    poses: np.ndarray,
+    pose_times: np.ndarray,
+) -> plt.Figure:
+    """
+    Plot position error between GNSS samples and nearest-in-time pose estimates.
+
+    Parameters
+    ----------
+    gnss
+        Array with columns [time, x, y].
+    poses
+        Pose estimates with columns [x, y, theta].
+    pose_times
+        Timestamp for each pose estimate.
+    """
+    pose_times = np.asarray(pose_times, dtype=float)
+    pose_xy = np.asarray(poses[:, :2], dtype=float)
+    gnss = np.asarray(gnss, dtype=float)
+
+    if len(pose_times) != len(pose_xy):
+        raise ValueError("pose_times must have the same length as poses.")
+    if len(pose_times) == 0:
+        raise ValueError("At least one pose is required.")
+    if len(gnss) == 0:
+        raise ValueError("At least one GNSS measurement is required.")
+
+    order = np.argsort(pose_times)
+    pose_times = pose_times[order]
+    pose_xy = pose_xy[order]
+
+    valid_gnss = np.isfinite(gnss[:, 0]) & np.isfinite(gnss[:, 1]) & np.isfinite(gnss[:, 2])
+    in_pose_interval = (pose_times[0] <= gnss[:, 0]) & (gnss[:, 0] <= pose_times[-1])
+    gnss = gnss[valid_gnss & in_pose_interval]
+
+    if len(gnss) == 0:
+        raise ValueError("No GNSS measurements overlap the pose time interval.")
+
+    nearest_pose_indices = _nearest_indices(gnss[:, 0], pose_times)
+    matched_pose_xy = pose_xy[nearest_pose_indices]
+
+    error_xy = matched_pose_xy - gnss[:, 1:3]
+    error_norm = np.linalg.norm(error_xy, axis=1)
+    time_offset = pose_times[nearest_pose_indices] - gnss[:, 0]
+    elapsed_time = gnss[:, 0] - pose_times[0]
+
+    rmse = np.sqrt(np.mean(error_norm**2))
+
+    fig, axes = plt.subplots(3, 1, figsize=(11, 7), sharex=True)
+
+    axes[0].scatter(elapsed_time, error_norm, s=14, color="steelblue")
+    axes[0].axhline(rmse, color="black", ls="--", lw=0.9, label=f"RMSE: {rmse:.2f} m")
+    axes[0].set_ylabel("Position error (m)")
+    axes[0].set_title("GNSS vs. Nearest Pose Error")
+    axes[0].legend(loc="upper right", fontsize=8)
+    axes[0].grid(True, lw=0.4)
+
+    axes[1].scatter(elapsed_time, error_xy[:, 0], s=14, color="steelblue", label="x error")
+    axes[1].scatter(elapsed_time, error_xy[:, 1], s=14, color="tomato", label="y error")
+    axes[1].axhline(0.0, color="black", lw=0.7)
+    axes[1].set_ylabel("Component error (m)")
+    axes[1].legend(loc="upper right", fontsize=8)
+    axes[1].grid(True, lw=0.4)
+
+    axes[2].scatter(elapsed_time, time_offset, s=14, color="dimgray")
+    axes[2].axhline(0.0, color="black", lw=0.7)
+    axes[2].set_xlabel("Time since start (s)")
+    axes[2].set_ylabel("Time offset (s)")
+    axes[2].grid(True, lw=0.4)
+
+    fig.tight_layout()
+    return fig
+
+
+def save_run_figures(
+    run_dir: Path | str,
+    steps: dict[str, np.ndarray],
+    snapshot: dict[str, np.ndarray],
+    gnss: np.ndarray | None = None,
+    fmt: str = "pdf",
+    show: bool = False,
+) -> list[Path]:
+    out_dir = Path(run_dir) / "figures"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    scan_steps = steps["scan_step"]
+
+    figures = {
+        "estimate": plot_estimate(
+            poses=snapshot.get("poses"),
+            poses_cov=snapshot.get("poses_covariance"),
+            landmarks=snapshot.get("landmarks"),
+            landmarks_cov=snapshot.get("landmarks_covariance"),
+            gnss=gnss,
+        ),
+        "timing_breakdown": plot_timing_breakdown(
+            steps=scan_steps,
+            t_cov=steps["t_covariance_extraction"],
+            t_assoc=steps["t_association"],
+            t_opt=steps["t_optimize"],
+            t_total=steps["t_update"],
+        ),
+        "timing_over_time": plot_timing_over_time(
+            steps=scan_steps,
+            t_total=steps["t_update"],
+            n_local=steps["n_local_landmarks"],
+        ),
+        "timing_vs_landmarks": plot_timing_vs_landmarks(
+            n_local=steps["n_local_landmarks"],
+            t_total=steps["t_update"],
+        ),
+        "landmark_growth": plot_landmark_growth(
+            steps=scan_steps,
+            n_landmarks=steps["n_landmarks"],
+        ),
+        "error_over_time": plot_error(
+            steps=scan_steps,
+            error=steps["fg_error"],
+            n_factors=steps["n_factors"],
+        ),
+        "gnss_pose_error": plot_gnss_pose_error(
+            gnss=gnss,
+            poses=snapshot.get("poses"),
+            pose_times=steps["scan_time"],
+        ) 
+    }
+
+    paths = []
+    for name, fig in figures.items():
+        path = out_dir / f"{name}.{fmt}"
+        fig.savefig(path, dpi=300, bbox_inches="tight")
+        paths.append(path)
+
+    if show:
         plt.show()
-
-    def _draw_trajectory_covariances(
-        self,
-        ax,
-        snapshot: dict,
-        cov_stride: int,
-    ) -> None:
-        pose_covariances = snapshot.get("poses_covariance", np.empty((0,)))
-        if pose_covariances.ndim == 3:
-            for k in range(0, len(snapshot["poses"]), cov_stride):
-                pose = snapshot["poses"][k]
-                cov = pose_covariances[k]
-                rotation = rotmat2(pose[2])
-                cov_translation = rotation @ cov[:2, :2] @ rotation.T
-                _confidence_ellipse_2d(
-                    ax,
-                    pose[:2],
-                    cov_translation,
-                    fc="steelblue",
-                    alpha=0.3,
-                    ec="steelblue",
-                    lw=0.5,
-                )
-
-        self._draw_landmark_covariances(ax, snapshot, alpha=0.3, lw=0.5)
-
-    def _draw_landmark_covariances(
-        self,
-        ax,
-        snapshot: dict,
-        alpha: float,
-        lw: float,
-    ) -> None:
-        landmark_covariances = snapshot.get("landmarks_covariance", np.empty((0,)))
-        if landmark_covariances.ndim != 3:
-            return
-
-        for landmark, cov in zip(snapshot["landmarks"], landmark_covariances):
-            _confidence_ellipse_2d(
-                ax,
-                landmark,
-                cov,
-                fc="tomato",
-                alpha=alpha,
-                ec="tomato",
-                lw=lw,
-            )
-
-
-@dataclass(slots=True)
-class SlamRunComparison:
-    """Convenience API for plotting several saved SLAM runs together."""
-
-    runs: list[SlamPlotter]
-    labels: list[str]
-
-    @classmethod
-    def from_runs(
-        cls,
-        run_dirs: Sequence[Path | str],
-        labels: Sequence[str] | None = None,
-        load_gps: bool = False,
-    ) -> "SlamRunComparison":
-        runs = [
-            SlamPlotter.from_run(run_dir, load_gps=load_gps)
-            for run_dir in run_dirs
-        ]
-        run_labels = (
-            list(labels)
-            if labels is not None
-            else [run.run_dir.name for run in runs]
-        )
-        return cls(runs=runs, labels=run_labels)
-
-    def __post_init__(self) -> None:
-        if len(self.runs) != len(self.labels):
-            raise ValueError("runs and labels must have the same length.")
-
-    def timing_total(self, log_scale: bool = True) -> plt.Figure:
-        """Plot total step time for each run."""
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        for run, label in zip(self.runs, self.labels):
-            ax.plot(
-                run.step_data["steps"],
-                run.step_data["time_total"],
-                lw=1.0,
-                label=label,
-            )
-
-        ax.set_xlabel("Scan step")
-        ax.set_ylabel("Step processing time (s)")
-        ax.set_title("Total Step Time Comparison")
-        if log_scale:
-            ax.set_yscale("log")
-        ax.legend()
-        ax.grid(True, which="both", lw=0.4)
-        fig.tight_layout()
-        return fig
-
-    def standard_figures(self) -> dict[str, plt.Figure]:
-        """Create the default comparison figure set."""
-        return {
-            "timing_total_comparison": self.timing_total(),
-        }
-
-    def save_all(
-        self,
-        out_dir: Path | str | None = None,
-        fmt: str = "pdf",
-    ) -> list[Path]:
-        """Save the default comparison figure set and close the figures."""
-        if out_dir is None:
-            out_dir = self.runs[0].run_dir.parent / "comparison_figures"
-        out_dir = Path(out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        paths = []
-        for name, fig in self.standard_figures().items():
-            path = out_dir / f"{name}.{fmt}"
-            fig.savefig(path, dpi=300, bbox_inches="tight")
+    else:
+        for fig in figures.values():
             plt.close(fig)
-            paths.append(path)
 
-        print(f"[plot] Saved {len(paths)} comparison figures to {out_dir.resolve()}")
-        return paths
-
-    def show_all(self) -> None:
-        """Show the default comparison figure set."""
-        self.standard_figures()
-        plt.show()
+    return paths
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot a saved SLAM run.")
     parser.add_argument("run_dir", type=Path)
-    parser.add_argument("--save-dir", type=Path)
     parser.add_argument("--fmt", default="pdf", choices=["pdf", "png", "svg"])
-    parser.add_argument("--covariances", action="store_true")
     parser.add_argument("--gnss", action="store_true")
-    parser.add_argument("--no-show", action="store_true")
-    parser.add_argument("--stride", type=int, default=20)
+    parser.add_argument("--show", action="store_true")
     args = parser.parse_args()
 
-    plotter = SlamPlotter.from_run(args.run_dir, load_gps=args.gnss)
-    plotter.save_all(
-        out_dir=args.save_dir,
+    run_dir = args.run_dir
+    steps = SlamLogger.load_steps(run_dir)
+    snapshot = SlamLogger.load_snapshot(run_dir / "snapshots" / "snap_final.npz")
+    gnss = VictoriaParkLoader().gnss if args.gnss else None
+    
+    save_run_figures(
+        run_dir=run_dir,
+        steps=steps,
+        snapshot=snapshot,
+        gnss=gnss,
         fmt=args.fmt,
-        covariances=args.covariances,
-        gnss=args.gnss,
-        cov_stride=args.stride,
+        show=args.show,
     )
-
-    if not args.no_show:
-        plotter.show_all(
-            covariances=args.covariances, 
-            gnss=args.gnss,
-            cov_stride=args.stride,
-        )
-
-    # comparison = SlamRunComparison.from_runs(
-    #     run_dirs=["runs/vp1_20260513_175021_forward", "runs/vp1_20260513_181822_backward"],
-    #     labels=["Baseline", "New association"],
-    # )
-
-    # comparison.save_all(fmt="pdf")
-    # comparison.show_all()
-
 
 
 if __name__ == "__main__":
     main()
+    

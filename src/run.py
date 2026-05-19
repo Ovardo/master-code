@@ -6,18 +6,19 @@ from tqdm import tqdm
 
 from config import SlamConfig
 from logger import SlamLogger
-from plotting import SlamPlotter
 from data_loader import VictoriaParkLoader
 from slam import FactorGraphSLAM
+from plotting import save_run_figures
 
 
 def main() -> None:
-    out_dir = Path("runs") / datetime.now().strftime("%Y%m%d_%H%M%S")
-    logger = SlamLogger(out_dir, snapshot_every=None)
+    
+    output_dir = Path("runs") / datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    logger = SlamLogger(output_dir)
 
     config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)
-    config.save(out_dir / config_name)
+    config.save(output_dir / config_name)
 
     # Data-loader
     loader = VictoriaParkLoader()
@@ -30,22 +31,43 @@ def main() -> None:
     )
 
     # Num lidar scan steps
-    K = 1000 # Max is 7250
+    K = 7300 # max is 7248
+
+    records = []
 
     # Main loop
-    for step in tqdm(loader.iterate(max_steps=K), total=K-1, desc="SLAM"):
-        slam.update(step)
+    for k, meas in tqdm(enumerate(loader.iterate(K)), total=min(K, 7248), desc="SLAM"):
+        
+        record = slam.update(meas)
+ 
+        if k % 1000 == 0 and k > 0:
+            snapshot = slam.get_snapshot()
+            logger.save_snapshot(k, snapshot)
+            
+            record['fg_error'] = slam.get_error()
+            record['n_factors'] = slam.get_n_factors()
 
-    # Save all logged data and the final snapshot and error.
-    logger.save(
-        snapshot=slam.get_snapshot(),
-        error=slam.get_error(),
-    )
+        records.append(record)
+
+
+    snapshot = slam.get_snapshot()
+    logger.save_snapshot(k, snapshot, final=True)
+    records[-1]['fg_error'] = slam.get_error()
+    records[-1]['n_factors'] = slam.get_n_factors()
+    
+    steps = logger.convert_records_to_steps(records)
+    logger.save_steps(steps)
+    logger.save_metadata(steps, snapshot)
 
     # Produce + save figures.
-    plotter = SlamPlotter.from_run(out_dir, load_gps=True)
-    plotter.save_all(fmt="pdf", covariances=True, gnss=True)
-    plotter.show_all(covariances=True, gnss=True)
+    save_run_figures(
+        run_dir=output_dir,
+        steps=steps,
+        snapshot=snapshot,
+        gnss=loader.gnss,
+        fmt="pdf",
+        show=True,
+    )
 
 
 if __name__ == "__main__":

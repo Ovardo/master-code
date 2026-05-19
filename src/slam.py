@@ -12,7 +12,7 @@ from data_loader import LidarStepInput, WheelOdometry
 from logger import SlamLogger
 from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
-from trash.utils_gtsam import reorder_covariance_naive
+from div.utils_gtsam import reorder_covariance_naive
 from utils import make_psd, pose2_to_array
 from preprocessing import detect_trees, relative_pose
 
@@ -56,27 +56,14 @@ class FactorGraphSLAM:
         # State tracking
         self._n_poses = 0 
         self._n_landmarks = 0 
+        
+        self.step_metrics = dict()  # for logging and analysis
 
         # Initialize with prior factor for initial pose
         self._add_prior_factor(initial_pose)
 
+    def _add_prior_factor(self, prior_pose: np.ndarray) -> None:
 
-    def update(self, data: LidarStepInput):
-        _t0 = time.perf_counter()
-        
-        self._register_odometry(data.odometry)
-        self._register_scan(data.scan)
-
-        self.logger.log_count("total_landmarks", self._n_landmarks)
-        # self.logger.log_value("error", self.isam2.)
-        self.logger.maybe_log_snapshot(self._n_poses, self.get_snapshot)
-        self.logger.log_time("total", time.perf_counter() - _t0)
-        self.logger.log_value("scan_time", data.scan_time)
-        self.logger.flush_step(step=self._n_poses)
-        
-
-    def _add_prior_factor(self, prior_pose: np.ndarray):
-        
         prior_pose = gtsam.Pose2(*prior_pose)
         self._new_values.insert(X(1), prior_pose)
         self._n_poses += 1 
@@ -96,6 +83,21 @@ class FactorGraphSLAM:
         )
 
         self._optimize()  
+
+    def update(self, data: LidarStepInput):
+        _t0 = time.perf_counter()
+
+        self.step_metrics.clear() # clear diagnostic info from previous step
+        self.step_metrics["scan_time"] = data.scan_time
+        self.step_metrics["scan_step"] = data.scan_step
+        
+        self._register_odometry(data.odometry)
+        self._register_scan(data.scan)
+
+        self.step_metrics["n_landmarks"] = self._n_landmarks
+        self.step_metrics["t_update"] = time.perf_counter() - _t0
+        
+        return self.step_metrics.copy()
 
 
     def _preintegrate_odometry(self, odometry: list[WheelOdometry]) -> tuple[gtsam.Pose2, np.ndarray]:
@@ -174,7 +176,9 @@ class FactorGraphSLAM:
         self._new_factors = gtsam.NonlinearFactorGraph()
         self._new_values = gtsam.Values()
 
-        self.logger.log_time("optimization", time.perf_counter() - _t0, accumulate=True)
+        _t1 = time.perf_counter()
+        self.step_metrics["t_optimize"] = self.step_metrics.get("t_optimize", 0.0) + (_t1 - _t0)
+
         return result
 
     def _get_predicted_measurements(self) -> tuple[np.ndarray, np.ndarray]:
@@ -195,7 +199,7 @@ class FactorGraphSLAM:
                 z_hat.append([r, b])
                 z_hat_ids.append(j)
         
-        self.logger.log_count("local_landmarks", len(z_hat))
+        self.step_metrics["n_local_landmarks"] = len(z_hat)
 
         return np.array(z_hat), np.array(z_hat_ids)
 
@@ -229,7 +233,7 @@ class FactorGraphSLAM:
         # Reorder covariance to match state ordering
         covariance = reorder_covariance_naive(covariance) # TODO: maybe make more secure, see comment above
 
-        self.logger.log_time("covariance_extraction", time.perf_counter() - _t0)
+        self.step_metrics["t_covariance_extraction"] = time.perf_counter() - _t0
         return covariance
 
 
@@ -268,7 +272,7 @@ class FactorGraphSLAM:
             if a >= 0:
                 association_global[i] = zbar_ids[a]
 
-        self.logger.log_time("association", time.perf_counter() - t0)
+        self.step_metrics["t_association"] = time.perf_counter() - t0
         return association_global
     
 
@@ -283,6 +287,10 @@ class FactorGraphSLAM:
             measurements[unassociated_mask],
         )
         self._promote_tentative_landmarks(confirmed_tentatives)
+
+        
+        self.step_metrics["n_associated"] = np.sum(associated_mask)
+        self.step_metrics["n_unassociated"] = np.sum(unassociated_mask)
         
 
     def _add_associated_landmark_measurements(
@@ -362,6 +370,9 @@ class FactorGraphSLAM:
         factors = self.isam2.getFactorsUnsafe()
         estimate = self.isam2.calculateEstimate()
         return factors.error(estimate)
+    
+    def get_n_factors(self) -> int:
+        return self.isam2.getFactorsUnsafe().size()
 
     def get_n_poses(self) -> int:
         return self._n_poses
@@ -371,11 +382,11 @@ class FactorGraphSLAM:
 
     def get_poses(self) -> np.ndarray:
         """Get all pose estimates"""
-        return np.array([pose2_to_array(self.isam2.calculateEstimatePose2(X(k))) for k in range(1, self._n_poses+1)])
+        return np.array([pose2_to_array(self.isam2.calculateEstimatePose2(X(k))) for k in range(2, self._n_poses+1)])
 
     def get_poses_covariance(self) -> np.ndarray:
         """Get marginal covariances for all pose estimates (#poses,3,3)"""
-        return np.stack([self.isam2.marginalCovariance(X(k)) for k in range(1, self._n_poses+1)], axis=0)
+        return np.stack([self.isam2.marginalCovariance(X(k)) for k in range(2, self._n_poses+1)], axis=0)
 
     def get_landmarks(self) -> np.ndarray:
         """Get all landmark estimates"""

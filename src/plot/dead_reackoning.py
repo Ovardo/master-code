@@ -148,7 +148,7 @@ def animate_covariance(
 
 def main():
     loader = VictoriaParkLoader()
-    gps = loader.gps
+    gnss = loader.gnss
     
     poses, covs, times = propagate_dead_reckoning(frame_stride=25)
     
@@ -157,7 +157,7 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 8))
     
     ax.plot([p.x() for p in poses], [p.y() for p in poses], label="Dead reckoning path", color="tab:blue", linewidth=1.8)
-    ax.scatter(gps[:, 1], gps[:, 2], marker='.', s=18, c="tab:orange", label="GPS measurements")
+    ax.scatter(gnss[:, 1], gnss[:, 2], marker='.', s=18, c="tab:orange", label="gnss measurements")
 
     ax.legend(loc="lower right")
 
@@ -167,7 +167,7 @@ def main():
         end = poses[-1]
         ax.plot(end.x(), end.y(), marker='o', color='red', markersize=8, label='End')
     
-    ax.set_title("Dead Reckoning Path vs GPS Measurements")
+    ax.set_title("Dead Reckoning Path vs gnss Measurements")
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     ax.axis("equal")

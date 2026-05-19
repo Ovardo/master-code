@@ -19,10 +19,10 @@ CROP_BOX_COLOR = "#f59e0b"
 SCAN_LINE_COLOR = "#22d3ee"
 
 
-def plot_sensor_timing(lidar, odometry, gps, window_seconds=2):
+def plot_sensor_timing(lidar, odometry, gnss, window_seconds=2):
     T_lsr = lidar[:, 0]
     T_odo = odometry[:, 0]
-    T_gps = gps[:, 0]
+    T_gps = gnss[:, 0]
 
     lsr_dt = np.diff(T_lsr)
     odo_dt = np.diff(T_odo)
@@ -49,8 +49,8 @@ def plot_sensor_timing(lidar, odometry, gps, window_seconds=2):
 
     plt.vlines(T_lsr, 0, 1, color='r', label=f'Laser scan times ({avg_lsr_freq:.2f} Hz, {avg_lsr_sample_time*1000:.2f} ms)')
     plt.vlines(T_odo, 0, 0.5, color='b', label=f'Odometry times ({avg_odo_freq:.2f} Hz, {avg_odo_sample_time*1000:.2f} ms)')
-    plt.vlines(T_gps, 0, 1.5, color='g', label=f'GPS times')
-    plt.title("Timing of Laser Scans, Odometry, and GPS Measurements")
+    plt.vlines(T_gps, 0, 1.5, color='g', label=f'gnss times')
+    plt.title("Timing of Laser Scans, Odometry, and gnss Measurements")
     plt.xlabel("Time (s)")
     plt.ylim(0, 1.75)
     plt.yticks([])
@@ -59,47 +59,47 @@ def plot_sensor_timing(lidar, odometry, gps, window_seconds=2):
     plt.tight_layout()
 
 
-def plot_raw_gps(gps, t0=None):
+def plot_raw_gps(gnss, t0=None):
     """
-    Plot raw GPS position measurements.
+    Plot raw gnss position measurements.
 
-    ``gps`` is expected to have columns [timestamp, x, y], where x/y are in
+    ``gnss`` is expected to have columns [timestamp, x, y], where x/y are in
     meters and timestamp is in seconds.
     """
     if t0 is None:
-        t0 = gps[0, 0]
+        t0 = gnss[0, 0]
 
-    gps_times = gps[:, 0] - t0
+    gps_times = gnss[:, 0] - t0
 
     gps_fig, gps_axis = plt.subplots(figsize=(8, 8), constrained_layout=True)
     gps_points = gps_axis.scatter(
-        gps[:, 1],
-        gps[:, 2],
+        gnss[:, 1],
+        gnss[:, 2],
         c=gps_times,
         cmap="turbo",
         s=10,
         linewidths=0,
-        label="GPS fixes",
+        label="gnss fixes",
     )
     gps_axis.scatter(
-        gps[0, 1],
-        gps[0, 2],
+        gnss[0, 1],
+        gnss[0, 2],
         color="tab:green",
         marker="x",
         s=70,
         linewidths=1.6,
-        label="First GPS",
+        label="First gnss",
     )
     gps_axis.scatter(
-        gps[-1, 1],
-        gps[-1, 2],
+        gnss[-1, 1],
+        gnss[-1, 2],
         color="tab:red",
         marker="x",
         s=70,
         linewidths=1.6,
-        label="Last GPS",
+        label="Last gnss",
     )
-    gps_axis.set_title("Raw GPS positions")
+    gps_axis.set_title("Raw gnss positions")
     gps_axis.set_xlabel("Easting (m)")
     gps_axis.set_ylabel("Northing (m)")
     gps_axis.axis("equal")
@@ -248,7 +248,7 @@ def _plot_range_bearing_guides(axis, max_range, num_beams, range_step=20.0, beam
 def plot_raw_measurements(
     lidar,
     odometry,
-    gps,
+    gnss,
     show_tree_overlay=True,
     range_limit=LIDAR_INFINITY_RANGE,
 ):
@@ -575,18 +575,18 @@ def main():
     
     lidar = data_loader.lidar
     odometry = data_loader.odometry
-    gps = data_loader.gps
+    gnss = data_loader.gnss
 
-    plot_sensor_timing(lidar, odometry, gps, window_seconds=1400)
-    plot_raw_measurements(lidar, odometry, gps)
+    plot_sensor_timing(lidar, odometry, gnss, window_seconds=1400)
+    plot_raw_measurements(lidar, odometry, gnss)
 
     fig = plot_raw_odometry(odometry)
     fig.set_size_inches(11.0, 4.0)  # width, height in inches
     fig.savefig("src/plotting/figures/odometry.pdf", bbox_inches="tight")
 
-    fig = plot_raw_gps(gps)
+    fig = plot_raw_gps(gnss)
     fig.set_size_inches(6.0, 5.5)  # width, height in inches
-    fig.savefig("src/plotting/figures/gps.pdf", bbox_inches="tight")
+    fig.savefig("src/plotting/figures/gnss.pdf", bbox_inches="tight")
 
     
     fig = plot_lidar_tree_detection_summary(lidar)

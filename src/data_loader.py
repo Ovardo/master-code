@@ -22,6 +22,7 @@ class LidarStepInput:
     odometry: list[WheelOdometry]
     scan: np.ndarray
     scan_time: float
+    scan_step: int
 
 
 class VictoriaParkLoader:
@@ -48,10 +49,10 @@ class VictoriaParkLoader:
         self.odo_velocity = raw_data["speed"].ravel()
         self.odo_timestamps = raw_data["time"].ravel() / 1000.0
 
-        # GPS: ms -> s
-        self.gps_latitude = raw_data["La_m"].ravel()
-        self.gps_longitude = raw_data["Lo_m"].ravel()
-        self.gps_timestamps = raw_data["timeGps"].ravel() / 1000.0
+        # gnss: ms -> s
+        self.gnss_latitude = raw_data["La_m"].ravel()
+        self.gnss_longitude = raw_data["Lo_m"].ravel()
+        self.gnss_timestamps = raw_data["timeGps"].ravel() / 1000.0
 
     def _prepare_odometry_intervals(self):
         """
@@ -123,6 +124,7 @@ class VictoriaParkLoader:
         """
         start_lidar_idx = 2 # as first lidar measurement (idx 0) is before odometry starts
         stop_lidar_idx = self.lsr_timestamps.size
+        scan_step = 0
 
         if max_steps is not None:
             stop_lidar_idx = min(stop_lidar_idx, start_lidar_idx + max_steps)
@@ -137,7 +139,9 @@ class VictoriaParkLoader:
                 odometry=odometry,
                 scan=self.lsr_scans[lidar_idx],
                 scan_time=self.lsr_timestamps[lidar_idx],
+                scan_step=scan_step,
             )
+            scan_step += 1
 
     @property
     def lidar(self) -> np.ndarray:
@@ -152,15 +156,15 @@ class VictoriaParkLoader:
         )
 
     @property
-    def gps(self) -> np.ndarray:
+    def gnss(self) -> np.ndarray:
         return np.column_stack(
-            [self.gps_timestamps, self.gps_longitude, self.gps_latitude]
+            [self.gnss_timestamps, self.gnss_longitude, self.gnss_latitude]
         )
 
     @property 
     def initial_pose(self) -> np.ndarray:
         return np.array(
-            [self.gps_longitude[0], self.gps_latitude[0], np.deg2rad(36)]
+            [self.gnss_longitude[0], self.gnss_latitude[0], np.deg2rad(36)]
         ) 
 
 

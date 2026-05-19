@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from config import SlamConfig
-from utils.utils_math import cartesian2polar, rotmat2, ssa
+from utils import cartesian2polar, rotmat2, ssa
 
 
 def get_sensor_model(cfg: SlamConfig) -> RangeBearing:

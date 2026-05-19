@@ -14,7 +14,7 @@ class NoiseConfig:
         γ_o,k ~ N(0, Q_o): additive noise on the resulting relative pose
 
     The resulting covariance used in preintegration is:
-        Q_k = J_u Q_u J_u^T + Q_o % TODO: change if not the case
+        Q_k = J_u Q_u J_u^T + Q_o % TODO: change if input noise is not used
 
     The measurement model is:
         z_kj = h(x_k, m_j) + η_kj
@@ -88,7 +88,7 @@ class NoiseConfig:
 
     @property
     def range_bearing_cov_matrix(self) -> np.ndarray:
-        """Return diagonal landmark observation covariance matrix in [range, bearing]."""
+        """Return diagonal landmark observation covariance matrix in order [range, bearing]."""
         return np.diag([
             self.sigma_range ** 2,
             self.sigma_bearing_rad ** 2,

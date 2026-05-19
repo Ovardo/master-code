@@ -1,15 +1,16 @@
 import sys
 from pathlib import Path
+
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.patches import Rectangle
 from matplotlib.colors import ListedColormap
+from matplotlib.patches import Rectangle
 from matplotlib.widgets import CheckButtons
 
 sys.path.append(str(Path(__file__).parents[1]))
 
 from data_loader import VictoriaParkLoader
-from utils.utils_victoria_park import detectTrees
+from preprocessing import detect_trees
 
 RANGE_CMAP = "viridis_r"
 LIDAR_INFINITY_RANGE = 80.0
@@ -158,7 +159,7 @@ def _as_detection_array(detections):
 
 
 def _tree_detections_by_scan(lidar_scans):
-    return [_as_detection_array(detectTrees(scan)) for scan in lidar_scans]
+    return [_as_detection_array(detect_trees(scan)) for scan in lidar_scans]
 
 
 def _bearing_to_beam_index(bearing, num_beams):

@@ -33,7 +33,7 @@ from matplotlib.patches import Ellipse
 
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
-from utils.utils_math import rotmat2
+from utils import rotmat2
 
 
 def _confidence_ellipse_2d(
@@ -60,6 +60,38 @@ def _confidence_ellipse_2d(
         **kwargs,
     )
     ax.add_patch(ellipse)
+
+
+
+
+
+@dataclass(slots=True)
+class SlamRun:
+    """Pure data container. No matplotlib dependency."""
+    run_dir:   Path
+    step_data: dict
+    snapshots: list[dict]
+    gps:  np.ndarray | None = None
+    label: str = ""          # used as legend label in comparisons
+
+    @classmethod
+    def load(cls, run_dir: Path | str, load_gps: bool = False, label: str | None = None) -> SlamRun:
+        run_dir = Path(run_dir)
+        return cls(
+            run_dir=run_dir,
+            step_data=SlamLogger.load(run_dir),
+            snapshots=SlamLogger.load_snapshots(run_dir),
+            gps_data=VictoriaParkLoader().gps if load_gps else None,
+            label=label or run_dir.name,
+        )
+
+    @property
+    def final_snapshot(self) -> dict:
+        return self.snapshots[-1]
+
+    @property
+    def metadata(self) -> dict:
+        return self.step_data.get("metadata", {})
 
 
 @dataclass(slots=True)
@@ -100,52 +132,13 @@ class SlamPlotter:
 
         fig, ax = plt.subplots(figsize=(10, 10))
 
-        ax.plot(
-            poses[:, 0],
-            poses[:, 1],
-            color="steelblue",
-            lw=1.5,
-            label="SLAM trajectory",
-            zorder=2,
-        )
-        ax.scatter(
-            poses[0, 0],
-            poses[0, 1],
-            color="green",
-            s=80,
-            zorder=5,
-            label="Start",
-        )
-        ax.scatter(
-            poses[-1, 0],
-            poses[-1, 1],
-            color="red",
-            s=80,
-            zorder=5,
-            label="End",
-        )
-        ax.scatter(
-            landmarks[:, 0],
-            landmarks[:, 1],
-            c="tomato",
-            marker=".",
-            s=40,
-            lw=1.2,
-            label=f"Landmarks ({len(landmarks)})",
-            zorder=3,
-        )
+        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", lw=1.5, label="SLAM trajectory", zorder=2,)
+        ax.scatter(poses[0, 0],poses[0, 1],color="green",s=80,zorder=5,label="Start")
+        ax.scatter( poses[-1, 0], poses[-1, 1], color="red", s=80, zorder=5, label="End")
+        ax.scatter( landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", s=40, lw=1.2, label=f"Landmarks ({len(landmarks)})", zorder=3,)
 
         if gnss and self.gps_data is not None:
-            ax.scatter(
-                self.gps_data[:, 1],
-                self.gps_data[:, 2],
-                c="gold",
-                marker=".",
-                s=24,
-                alpha=0.6,
-                label="GPS",
-                zorder=1,
-            )
+            ax.scatter(self.gps_data[:, 1],self.gps_data[:, 2],c="gold",marker=".",s=24,alpha=0.6,label="GPS",zorder=1)
 
         if covariances:
             self._draw_trajectory_covariances(ax, snapshot, cov_stride)
@@ -244,64 +237,17 @@ class SlamPlotter:
         fig.tight_layout()
         return fig
 
-    def snapshot_grid(
-        self,
-        max_cols: int = 3,
-        covariances: bool = False,
-        max_snapshots: int = 9,
-    ) -> plt.Figure:
-        """Plot a small grid of snapshots to show map growth."""
-        stride = max(1, len(self.snapshots) // max_snapshots)
-        snapshots = self.snapshots[::stride][:max_snapshots]
 
-        cols = min(len(snapshots), max_cols)
-        rows = (len(snapshots) + cols - 1) // cols
-        fig, axes = plt.subplots(
-            rows,
-            cols,
-            figsize=(5 * cols, 5 * rows),
-            squeeze=False,
-        )
-
-        for idx, snapshot in enumerate(snapshots):
-            ax = axes[idx // cols][idx % cols]
-            step = int(snapshot["step"])
-            poses = snapshot["poses"]
-            landmarks = snapshot["landmarks"]
-
-            ax.plot(poses[:, 0], poses[:, 1], color="steelblue", lw=1.0)
-            ax.scatter(
-                landmarks[:, 0],
-                landmarks[:, 1],
-                c="tomato",
-                marker="x",
-                s=20,
-                lw=0.8,
-                zorder=3,
-            )
-
-            if covariances:
-                self._draw_landmark_covariances(ax, snapshot, alpha=0.15, lw=0.4)
-
-            ax.set_title(f"Step {step} | {len(landmarks)} landmarks", fontsize=9)
-            ax.set_aspect("equal")
-            ax.grid(True, lw=0.3)
-
-        for idx in range(len(snapshots), rows * cols):
-            axes[idx // cols][idx % cols].set_visible(False)
-
-        fig.suptitle("SLAM Map Growth", fontsize=12, y=1.01)
-        fig.tight_layout()
-        return fig
 
     def standard_figures(
         self,
         covariances: bool = False,
+        cov_stride: int = 10,
         gnss: bool = False,
     ) -> dict[str, plt.Figure]:
         """Create the default figure set."""
         return {
-            "trajectory": self.trajectory(covariances=covariances, gnss=gnss),
+            "trajectory": self.trajectory(covariances=covariances, gnss=gnss, cov_stride=cov_stride),
             "timing_breakdown": self.timing_breakdown(),
             "timing_over_time": self.timing_over_time(),
             "timing_vs_landmarks": self.timing_vs_landmarks(),
@@ -314,13 +260,14 @@ class SlamPlotter:
         fmt: str = "pdf",
         covariances: bool = False,
         gnss: bool = False,
+        cov_stride: int = 10,
     ) -> list[Path]:
         """Save the default figure set and close the figures."""
         out_dir = Path(out_dir) if out_dir is not None else self.run_dir / "figures"
         out_dir.mkdir(parents=True, exist_ok=True)
 
         paths = []
-        figures = self.standard_figures(covariances=covariances, gnss=gnss)
+        figures = self.standard_figures(covariances=covariances, gnss=gnss, cov_stride=cov_stride)
         for name, fig in figures.items():
             path = out_dir / f"{name}.{fmt}"
             fig.savefig(path, dpi=300, bbox_inches="tight")
@@ -330,9 +277,9 @@ class SlamPlotter:
         print(f"[plot] Saved {len(paths)} figures to {out_dir.resolve()}")
         return paths
 
-    def show_all(self, covariances: bool = False, gnss: bool = False) -> None:
+    def show_all(self, covariances: bool = False, gnss: bool = False, cov_stride: int = 10) -> None:
         """Show the default figure set."""
-        self.standard_figures(covariances=covariances, gnss=gnss)
+        self.standard_figures(covariances=covariances, cov_stride=cov_stride, gnss=gnss)
         plt.show()
 
     def _draw_trajectory_covariances(
@@ -475,6 +422,7 @@ def main() -> None:
     parser.add_argument("--covariances", action="store_true")
     parser.add_argument("--gnss", action="store_true")
     parser.add_argument("--no-show", action="store_true")
+    parser.add_argument("--stride", type=int, default=20)
     args = parser.parse_args()
 
     plotter = SlamPlotter.from_run(args.run_dir, load_gps=args.gnss)
@@ -483,10 +431,15 @@ def main() -> None:
         fmt=args.fmt,
         covariances=args.covariances,
         gnss=args.gnss,
+        cov_stride=args.stride,
     )
 
     if not args.no_show:
-        plotter.show_all(covariances=args.covariances, gnss=args.gnss)
+        plotter.show_all(
+            covariances=args.covariances, 
+            gnss=args.gnss,
+            cov_stride=args.stride,
+        )
 
     # comparison = SlamRunComparison.from_runs(
     #     run_dirs=["runs/vp1_20260513_175021_forward", "runs/vp1_20260513_181822_backward"],

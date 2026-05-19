@@ -14,7 +14,7 @@ from matplotlib.patches import Ellipse
 
 from config import SlamConfig
 from data_loader import VictoriaParkLoader
-from utils.utils_victoria_park import relativePose
+from preprocessing import relative_pose
 
 matplotlib.use('qtagg')
 
@@ -62,7 +62,7 @@ def propagate_dead_reckoning(frame_stride: int = 1):
         velocity = odom[1]
         steering = odom[2]
         
-        odo, _ = relativePose(velocity, steering, dt)
+        odo, _ = relative_pose(velocity, steering, dt)
         
         H1 = np.zeros((3, 3), order="F")
         H2 = np.zeros((3, 3), order="F")

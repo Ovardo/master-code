@@ -1,5 +1,5 @@
 import numpy as np
-
+import gtsam
 
 def rotmat2(theta: float) -> np.ndarray:
     c, s = np.cos(theta), np.sin(theta)
@@ -21,16 +21,13 @@ def symmetrize(A: np.ndarray) -> np.ndarray:
 
 def make_psd(A: np.ndarray) -> np.ndarray:
     """Converts a matrix A into a positive semi-definite matrix."""
-    # 1. Symmetrize the matrix
-    C = symmetrize(A)
-
-    # 2. Compute eigenvalues and eigenvectors
-    eigval, eigvec = np.linalg.eigh(C)
-
-    # 3. Set negative eigenvalues to zero
+    A_sym = symmetrize(A)
+    eigval, eigvec = np.linalg.eigh(A_sym)
     eigval[eigval < 0] = 0
-
-    # 4. Reconstruct the matrix
     psd_matrix = eigvec @ np.diag(eigval) @ eigvec.T
     return psd_matrix
+
+def pose2_to_array(p: gtsam.Pose2) -> np.ndarray:
+    """Convert gtsam.Pose2 -> np.array([x, y, theta])"""
+    return np.array([p.x(), p.y(), p.theta()])
 

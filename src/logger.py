@@ -1,3 +1,159 @@
+from __future__ import annotations
+
+"""
+SlamLogger — per-step diagnostics, snapshot saving, and offline reloading.
+
+Saves to:
+    <run_dir>/
+        metadata.json          ← scalar metadata
+        step_data.npz          ← per-step diagnostics (NaN for absent fields)
+        snapshots/
+            step_000050.npz    ← full state at step 50
+            step_000100.npz    ← full state at step 100
+            step_final.npz     ← final state (always written by save())
+"""
+
+# from __future__ import annotations
+
+# import json
+# from datetime import datetime
+# from pathlib import Path
+
+# import numpy as np
+
+
+# class SlamLogger:
+#     """
+#     Accepts one StepDiagnostics per SLAM update and persists them.
+
+#     Parameters
+#     ----------
+#     run_dir:
+#         Root directory for this run's output (created on construction).
+#     """
+
+#     def __init__(self, run_dir: Path):
+#         self.run_dir      = Path(run_dir)
+#         self.snapshot_dir = self.run_dir / "snapshots"
+
+#         self.run_dir.mkdir(parents=True, exist_ok=True)
+#         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+#         self._records: list[dict] = []
+
+#     # ------------------------------------------------------------------
+#     # Per-step logging
+#     # ------------------------------------------------------------------
+
+#     def log_step(self, result) -> None:
+#         """Record one step. Called once per slam.update()."""
+#         self._records.append(result)
+
+#     # ------------------------------------------------------------------
+#     # Snapshots
+#     # ------------------------------------------------------------------
+
+#     def log_snapshot(self, step: int, snapshot: dict[str, np.ndarray]) -> None:
+#         """Write a full-state snapshot immediately. Caller decides when."""
+#         path = self.snapshot_dir / f"step_{step:06d}.npz"
+#         np.savez_compressed(path, step=np.array(step), **snapshot)
+
+#     # ------------------------------------------------------------------
+#     # Final save
+#     # ------------------------------------------------------------------
+
+#     def save(self, snapshot: dict[str, np.ndarray], error: float) -> Path:
+#         """
+#         Persist all step data and write the final snapshot.
+
+#         Parameters
+#         ----------
+#         snapshot : dict returned by slam.get_snapshot()
+#         error    : float returned by slam.get_error()
+#         """
+#         self._save_step_data()
+#         self._save_final_snapshot(snapshot)
+#         self._save_final_metadata(snapshot, error)
+#         return self.run_dir
+
+#     def _save_step_data(self) -> None:
+#         if not self._records:
+#             return
+
+#         # Union of all keys seen across steps; absent entries become NaN
+#         all_keys = {k for record in self._records for k in record}
+#         arrays = {
+#             k: np.asarray([r.get(k, np.nan) for r in self._records])
+#             for k in all_keys
+#         }
+#         np.savez_compressed(self.run_dir / "step_data.npz", **arrays)
+
+#     def _save_final_snapshot(self, snapshot: dict[str, np.ndarray]) -> None:
+#         np.savez_compressed(
+#             self.snapshot_dir / "step_final.npz",
+#             step=np.array(len(snapshot["poses"])),
+#             **snapshot,
+#         )
+
+#     def _save_final_metadata(self, final_snapshot: dict[str, np.ndarray], final_error: float) -> None:
+#         total_times = [r.get("total_time", np.nan) for r in self._records]
+#         metadata = {
+#             "timestamp":     datetime.now().isoformat(timespec="seconds"),
+#             "num_steps":     len(self._records),
+#             "num_poses":     int(len(final_snapshot["poses"])),
+#             "num_landmarks": int(len(final_snapshot["landmarks"])),
+#             "total_error":   final_error,
+#             "total_time_s":  round(float(np.nansum(total_times)), 3),
+#         }
+#         (self.run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+#         print(f"[SlamLogger] Saved → {self.run_dir.resolve()}")
+#         print(f"             poses={metadata['num_poses']}  "
+#               f"landmarks={metadata['num_landmarks']}  "
+#               f"total_error={metadata['total_error']:.3f}  "
+#               f"total_time={metadata['total_time_s']:.1f}s")
+
+#     # ------------------------------------------------------------------
+#     # Loading (static — no instance needed)
+#     # ------------------------------------------------------------------
+
+#     @staticmethod
+#     def load(run_dir: Path) -> dict:
+#         """
+#         Load step-level data and metadata for a saved run.
+
+#         Returns a flat dict with one key per logged field plus "metadata".
+#         """
+#         run_dir  = Path(run_dir)
+#         npz_path = run_dir / "step_data.npz"
+#         if not npz_path.exists():
+#             raise FileNotFoundError(f"No step_data.npz in {run_dir}")
+
+#         archive = np.load(npz_path, allow_pickle=False)
+#         data    = {k: archive[k] for k in archive.files}
+
+#         meta_path = run_dir / "metadata.json"
+#         data["metadata"] = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+#         return data
+
+#     @staticmethod
+#     def load_snapshot(path: Path) -> dict:
+#         archive = np.load(Path(path), allow_pickle=False)
+#         return {k: archive[k] for k in archive.files}
+
+#     @staticmethod
+#     def load_snapshots(run_dir: Path, include_final: bool = True) -> list[dict]:
+#         snap_dir = Path(run_dir) / "snapshots"
+#         if not snap_dir.exists():
+#             return []
+
+#         paths = sorted(snap_dir.glob("step_[0-9]*.npz"))
+#         if include_final and (final := snap_dir / "step_final.npz").exists():
+#             paths.append(final)
+
+#         return [SlamLogger.load_snapshot(p) for p in paths]
+
+
 """
 SlamLogger — integrated logging, snapshot saving, and offline reloading.
 
@@ -22,7 +178,6 @@ Usage (offline plotting):
     snapshots = SlamLogger.load_snapshots(Path("results/xxx.yaml"))
 """
 
-from __future__ import annotations
 
 import json
 from datetime import datetime
@@ -224,6 +379,7 @@ class SlamLogger:
         print(f"[SlamLogger] Saved → {self.run_dir.resolve()}")
         print(f"             poses={metadata['num_poses']}  "
               f"landmarks={metadata['num_landmarks']}  "
+              f"error={metadata['total_error']:.3f}  "
               f"total_time={metadata['total_time_s']:.1f}s")
         return self.run_dir
 

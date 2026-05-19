@@ -1,10 +1,12 @@
 # TODO: Odin Aleksander Severinsen 
 
 from dataclasses import dataclass
-from utils.utils_math import ssa
 
-import numpy as np
 import gtsam
+import numpy as np
+
+from utils import ssa
+
 
 @dataclass(frozen=True)
 class Car:
@@ -17,7 +19,7 @@ class Car:
     b: float = 0.5 # laser distance to the left of center
 
 
-def relativePose(vel_e, steer, dt):
+def relative_pose(vel_e, steer, dt):
     """
     Convert encoder-frame velocity and wheel steer angle to relative pose increment using the 
     kinematic bicycle model. Also calculates the coresponding jacobian.
@@ -81,7 +83,7 @@ def relativePose(vel_e, steer, dt):
     return odo, J_odo_u
 
 
-def detectTrees(scan):
+def detect_trees(scan):
     """
     Convert lidar scan to tree detections in a single 180° laser scan (0.5° resolution)
     Code taken from: https://github.com/ramanans1/EKF-SLAM/blob/master/tree_extraction.py
@@ -95,7 +97,6 @@ def detectTrees(scan):
     z : np.ndarray, shape=(M, 2)
         Detected tree measurements as (range, bearing) pairs.
     """
-
     M11 = 75
     M10 = 1
     daa = 5 * np.pi / 306

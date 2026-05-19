@@ -13,12 +13,12 @@ from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
 
 from config import SlamConfig
-from utils import utils_math
+from utils import ssa
 
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 
 
-def get_associatior(cfg: SlamConfig) -> Associator:
+def get_associator(cfg: SlamConfig) -> Associator:
     """Factory function to create an associator based on the config."""
     return Associator(
         method=cfg.association.method,
@@ -52,20 +52,20 @@ class Associator:
             - -1 for unassociated (new landmark or outlier)
         """
         if self.method == 'jcbb':
-            associations = JCBB_assocation(z, zbar, S, self.alpha_individual, self.alpha_joint)
+            associations = JCBB_association(z, zbar, S, self.alpha_individual, self.alpha_joint)
         elif self.method == 'ml':
             associations = ML_association(z, zbar, S, self.alpha_individual)
         elif self.method == 'gt':
-            pass # to be implemented
+            raise NotImplementedError 
         elif self.method == 'nn':
-            pass # to be implemented
+            raise NotImplementedError
         else:
             raise ValueError(f"Unknown association method: {self.method}")
        
         return associations
     
 
-def JCBB_assocation(z, zbar, S, alpha_individual, alpha_joint):
+def JCBB_association(z, zbar, S, alpha_individual, alpha_joint):
     
     L = zbar.shape[0] # num predicted measurements 
     M = z.shape[0] # num actual measurements
@@ -162,7 +162,7 @@ def individualCompatibility(z, zbar, S):
     for i in range(M):
         for j in range(L):
             dz = z[i] - zbar[j]
-            dz[1] = utils_math.ssa(dz[1]) #Important!
+            dz[1] = ssa(dz[1]) #Important!
             S_jj = S[2*j:2*j+2, 2*j:2*j+2]
             ic[i, j] = float(dz.T @ np.linalg.solve(S_jj, dz))
 
@@ -206,7 +206,7 @@ def NIS(z, zbar, S, a):
     v = z_test - zbar_test
 
     # Wrap bearing (or angle) component in 2D form, then flatten once
-    v[:, 1] = utils_math.ssa(v[:, 1])
+    v[:, 1] = ssa(v[:, 1])
     v = v.ravel()
 
     # Build index vector for the relevant 2x2 blocks in S

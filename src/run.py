@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from config import SlamConfig
 from logger import SlamLogger
-from plot import SlamPlotter
+from plotting import SlamPlotter
 from data_loader import VictoriaParkLoader
 from slam import FactorGraphSLAM
 

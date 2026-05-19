@@ -6,15 +6,15 @@ import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
 
-from association import get_associatior
+from association import get_associator
 from config import SlamConfig
 from data_loader import LidarStepInput, WheelOdometry
 from logger import SlamLogger
 from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
-from utils.utils_gtsam import pose2_to_array, reorder_covariance_naive
-from utils.utils_math import make_psd
-from utils.utils_victoria_park import detectTrees, relativePose
+from trash.utils_gtsam import reorder_covariance_naive
+from utils import make_psd, pose2_to_array
+from preprocessing import detect_trees, relative_pose
 
 # TODO: visualize display(graphviz.Source(isam.dot()))
 
@@ -32,7 +32,7 @@ class FactorGraphSLAM:
         self.logger = logger
         
         self.tentative = get_tentative_landmark_manager(config)
-        self.associator = get_associatior(config)
+        self.associator = get_associator(config)
         self.sensor = get_sensor_model(config)
         # self.profiler = get_profiler(config)
         
@@ -104,7 +104,7 @@ class FactorGraphSLAM:
         Sigma = np.zeros((3,3))
         
         for odo in odometry:
-            T_odo, J_odo_u = relativePose(odo.velocity, odo.steering, odo.dt)
+            T_odo, J_odo_u = relative_pose(odo.velocity, odo.steering, odo.dt)
             # J_odo_u @ self.Q_input @ J_odo_u.T
             Q_odo =  odo.dt * self.Q_output # TODO: consider J_odo_u
 
@@ -148,7 +148,7 @@ class FactorGraphSLAM:
     def _register_scan(self, scan):
         
         # Convert from raw scan to tree range-bearing measurements
-        z = detectTrees(scan)
+        z = detect_trees(scan)
 
         # filter away measurements long rang measurements as often inprecise
         z = z[z[:, 0] < self.cfg.sensor.max_range] 
@@ -164,7 +164,7 @@ class FactorGraphSLAM:
         
         self._handle_association(z, asssociation)
 
-        resuult = self._optimize() # TODO: can use data in result for analysis
+        result = self._optimize() # TODO: can use data in result for analysis
   
 
     def _optimize(self) -> gtsam.ISAM2Result:

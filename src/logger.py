@@ -232,7 +232,7 @@ class SlamLogger:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def load_data(run_dir: Path) -> dict:
+    def load(run_dir: Path) -> dict:
         """
         Load step-level data and metadata for a saved run.
 

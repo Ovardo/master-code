@@ -128,7 +128,7 @@ class SlamPlotter:
             landmarks[:, 0],
             landmarks[:, 1],
             c="tomato",
-            marker="x",
+            marker=".",
             s=40,
             lw=1.2,
             label=f"Landmarks ({len(landmarks)})",
@@ -488,13 +488,13 @@ def main() -> None:
     if not args.no_show:
         plotter.show_all(covariances=args.covariances, gnss=args.gnss)
 
-    comparison = SlamRunComparison.from_runs(
-        run_dirs=["runs/vp1_20260513_175021_forward", "runs/vp1_20260513_181822_backward"],
-        labels=["Baseline", "New association"],
-    )
+    # comparison = SlamRunComparison.from_runs(
+    #     run_dirs=["runs/vp1_20260513_175021_forward", "runs/vp1_20260513_181822_backward"],
+    #     labels=["Baseline", "New association"],
+    # )
 
-    comparison.save_all(fmt="pdf")
-    comparison.show_all()
+    # comparison.save_all(fmt="pdf")
+    # comparison.show_all()
 
 
 

@@ -5,10 +5,10 @@ from pathlib import Path
 from tqdm import tqdm
 
 from config import SlamConfig
-from logger import SlamLogger
 from data_loader import VictoriaParkLoader
-from slam import FactorGraphSLAM
+from logger import SlamLogger
 from plotting import save_run_figures
+from slam import FactorGraphSLAM
 
 
 def main() -> None:
@@ -40,12 +40,12 @@ def main() -> None:
         
         record = slam.update(meas)
  
-        if k % 1000 == 0 and k > 0:
+        if k % 200 == 0 and k > 0:
             snapshot = slam.get_snapshot()
             logger.save_snapshot(k, snapshot)
             
             record['fg_error'] = slam.get_error()
-            record['n_factors'] = slam.get_n_factors()
+            record['n_factors'] = slam.get_num_factors()
 
         records.append(record)
 
@@ -53,7 +53,7 @@ def main() -> None:
     snapshot = slam.get_snapshot()
     logger.save_snapshot(k, snapshot, final=True)
     records[-1]['fg_error'] = slam.get_error()
-    records[-1]['n_factors'] = slam.get_n_factors()
+    records[-1]['n_factors'] = slam.get_num_factors()
     
     steps = logger.convert_records_to_steps(records)
     logger.save_steps(steps)

@@ -45,3 +45,16 @@ uv sync
 ## Structure of project
 
 TODO
+
+## Notation used 
+
+`T_k` denotes the pose of the robot body frame at time $k$ in the world frame, i.e. $\mathbf{T}_{WB_k}$.  
+`T_kp1` denotes the pose of the robot body frame at time $k+1$ in the world frame, i.e. $\mathbf{T}_{WB_{k+1}}$.  
+`T_k_kp1` denotes the relative pose of the robot body frame at time $k+1$ in the robot body frame at time $k$, i.e. $\mathbf{T}_{B_k B_{k+1}}$.  
+`B_lm_i` will when appropiate be used to denote the position of landmark $i$ in the robot body frame $B$, i.e. $_{B}\mathbf{\ell}_i$.
+
+
+
+
+
+

@@ -101,13 +101,10 @@ def _JCBBrec(z, zbar, S, alpha_joint, g2, j, a, ic, abest):
 
     if j >= M: # end of recursion
         n_best = num_associations(abest)
-        
         if n > n_best:
             return a
-        
         if n == n_best and NIS(z, zbar, S, a) < NIS(z, zbar, S, abest):
             return a
-        
         return abest
 
     # still at least one measurement to associate...

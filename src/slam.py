@@ -57,17 +57,71 @@ class FactorGraphSLAM:
         self._n_poses = 0 
         self._n_landmarks = 0 
         
+        self._poses_keys = list()  # list of pose keys in the factor graph
+        self._map_keys = list()  # list of landmark keys in the factor graph
+        
         self.step_metrics = dict()  # for logging and analysis
 
         # Initialize with prior factor for initial pose
         self._add_prior_factor(initial_pose)
 
+    def update(self, data: LidarStepInput):
+        _t0 = time.perf_counter()
+
+        self.step_metrics.clear() # clear diagnostic info from previous step
+        
+        T_k_kp1, cov_k_kp1 = self._preintegrate_odometry(data.odometry)
+        T_kp1 = self._add_relative_pose_factor(T_k_kp1, cov_k_kp1)
+        self._optimize()
+        
+        # Convert from raw scan to tree range-bearing measurements
+        z = detect_trees(data.scan)
+        z = z[z[:, 0] < self.cfg.sensor.max_range] # filter away measurements long rang measurements as often inprecise
+
+        local_map, local_map_keys = self._get_local_map(T_kp1)
+    
+        query          = [self._poses_keys[-1]] + local_map_keys
+        query_cov      = self._extract_joint_covariance(query)
+        innovation_cov = self.sensor.innovation_covariance(T_kp1, local_map, query_cov)   
+        local_z_hat    = self.sensor.h(T_kp1, local_map)
+       
+        association = self.associator.associate(z, local_z_hat, innovation_cov)
+        is_associated   = association >= 0
+        z_associated    = z[is_associated]
+        z_unassociated  = z[~is_associated]
+        associated_keys = [local_map_keys[i] for i in association[is_associated]]
+
+        self._add_bearing_range_factors(z_associated, associated_keys)
+        
+        landmarks_unassociated = self.sensor.h_inverse(T_kp1, z_unassociated) 
+        
+        confirmed_tentatives = self.tentative.process_unassociated_measurements(
+            current_step=self._n_poses,
+            unassociated_measurements=z_unassociated,
+            new_tentative_landmarks=landmarks_unassociated,
+        )
+
+        self._promote_tentative_landmarks(confirmed_tentatives)
+
+        result = self._optimize() # TODO: can use data in result for analysis
+
+
+        self.step_metrics["scan_time"] = data.scan_time
+        self.step_metrics["scan_step"] = data.scan_step
+        self.step_metrics["n_landmarks"] = self._n_landmarks
+        self.step_metrics["n_local_landmarks"] = len(local_map_keys)
+        self.step_metrics["t_update"] = time.perf_counter() - _t0
+        
+        return self.step_metrics.copy()
+    
+
     def _add_prior_factor(self, prior_pose: np.ndarray) -> None:
 
         prior_pose = gtsam.Pose2(*prior_pose)
         self._new_values.insert(X(1), prior_pose)
-        self._n_poses += 1 
-        
+        self._poses_keys.append(X(1))
+        self._n_poses = 1
+
         prior_noise = gtsam.noiseModel.Diagonal.Sigmas(
             [self.cfg.noise.sigma_init_pose_x, 
              self.cfg.noise.sigma_init_pose_y, 
@@ -83,29 +137,13 @@ class FactorGraphSLAM:
         )
 
         self._optimize()  
-
-    def update(self, data: LidarStepInput):
-        _t0 = time.perf_counter()
-
-        self.step_metrics.clear() # clear diagnostic info from previous step
-        self.step_metrics["scan_time"] = data.scan_time
-        self.step_metrics["scan_step"] = data.scan_step
-        
-        self._register_odometry(data.odometry)
-        self._register_scan(data.scan)
-
-        self.step_metrics["n_landmarks"] = self._n_landmarks
-        self.step_metrics["t_update"] = time.perf_counter() - _t0
-        
-        return self.step_metrics.copy()
-
-
-    def _preintegrate_odometry(self, odometry: list[WheelOdometry]) -> tuple[gtsam.Pose2, np.ndarray]:
+    
+    def _preintegrate_odometry(self, wheel_odometry: list[WheelOdometry]) -> tuple[gtsam.Pose2, np.ndarray]:
         
         Delta = gtsam.Pose2.Identity()
         Sigma = np.zeros((3,3))
         
-        for odo in odometry:
+        for odo in wheel_odometry:
             Delta_inc, J_delta_u = relative_pose(odo.velocity, odo.steering, odo.dt)
             # J_odo_u @ self.Q_input @ J_odo_u.T
             Sigma_inc = odo.dt * self.Q_output # TODO: consider J_odo_u
@@ -118,55 +156,30 @@ class FactorGraphSLAM:
         
         return Delta, Sigma
     
-    def _add_relative_pose_factor(self, Delta: gtsam.Pose2, Sigma: np.ndarray):
-        k = X(self._n_poses)
-        kp1 = X(self._n_poses + 1)
-        self._n_poses += 1 
+    def _add_relative_pose_factor(self, T_k_kp1: gtsam.Pose2, cov_k_kp1: np.ndarray):
+        k   = X(len(self._poses_keys))
+        kp1 = X(len(self._poses_keys) + 1)
+        self._poses_keys.append(kp1)
+        self._n_poses += 1
 
         # Add initial guess for new pose
         T_k = self.isam2.calculateEstimatePose2(k)
-        T_kp1 = T_k.compose(Delta)
+        T_kp1 = T_k.compose(T_k_kp1)
         self._new_values.insert(kp1, T_kp1)
 
         # Odometry factor: measurement from k to kp1 
-        noise_model = gtsam.noiseModel.Gaussian.Covariance(Sigma)
+        cov = gtsam.noiseModel.Gaussian.Covariance(cov_k_kp1)
 
         self._new_factors.add(
             gtsam.BetweenFactorPose2(
                 key1=k, 
                 key2=kp1, 
-                relativePose=Delta,
-                noiseModel=noise_model
+                relativePose=T_k_kp1,
+                noiseModel=cov
             )
         )
-    
-    def _register_odometry(self, odometry: list[WheelOdometry]):
-        T_Bk_Bkp1, Sigma_Bk_Bkp1 = self._preintegrate_odometry(odometry)
-        self._add_relative_pose_factor(T_Bk_Bkp1, Sigma_Bk_Bkp1)
-        self._optimize()
 
-
-    def _register_scan(self, scan):
-        
-        # Convert from raw scan to tree range-bearing measurements
-        z = detect_trees(scan)
-
-        # filter away measurements long rang measurements as often inprecise
-        z = z[z[:, 0] < self.cfg.sensor.max_range] 
-
-        # Data association
-        z_hat, z_hat_ids = self._get_predicted_measurements()
-        
-        cov_joint = self._extract_joint_covariance(z_hat_ids)
-
-        cov_innovation = self._compute_innovation_covariance(z_hat_ids, cov_joint)   
-    
-        asssociation = self._compute_association(z, z_hat, z_hat_ids, cov_innovation)
-        
-        self._handle_association(z, asssociation)
-
-        result = self._optimize() # TODO: can use data in result for analysis
-  
+        return T_kp1
 
     def _optimize(self) -> gtsam.ISAM2Result:
         _t0 = time.perf_counter()
@@ -180,45 +193,21 @@ class FactorGraphSLAM:
 
         return result
 
-    def _get_predicted_measurements(self) -> tuple[np.ndarray, np.ndarray]:
-        """Get predicted measurements for all landmarks based on priori pose estimate and landmark estimates."""
-        
-        z_hat     = list() 
-        z_hat_ids = list()
+    def _get_local_map(self, T_k: gtsam.Pose2) -> tuple[np.ndarray, list[int]]:
+        local_map = []
+        local_map_keys = []
 
-        T = self.isam2.calculateEstimatePose2(X(self._n_poses))
-        
-        for j in range(self._n_landmarks):
-            lm = self.isam2.calculateEstimatePoint2(L(j))
+        for j in self._map_keys:
+            l_j = self.isam2.calculateEstimatePoint2(j)
             
-            r = T.range(lm)
-            b = T.bearing(lm).theta()  
+            r = T_k.range(l_j)
+            b = T_k.bearing(l_j).theta()  
             
             if self._is_inside_gate(r, b):
-                z_hat.append([r, b])
-                z_hat_ids.append(j)
-        
-        self.step_metrics["n_local_landmarks"] = len(z_hat)
+                local_map.append(l_j)
+                local_map_keys.append(j)
 
-        return np.array(z_hat), np.array(z_hat_ids)
-
-    def _get_local_map(self) -> gtsam.KeyList:
-        local_map = list()
-        T = self.isam2.calculateEstimatePose2(X(self._n_poses))
-        
-        for j in self.map:
-            lm = self.isam2.calculateEstimatePoint2(j)
-            
-            r = T.range(lm)
-            b = T.bearing(lm).theta()  
-            
-            if self._is_inside_gate(r, b):
-                local_map.append(j)
-        
-        self.step_metrics["n_local_landmarks"] = len(local_map)
-
-        return local_map
-
+        return np.array(local_map), local_map_keys
 
     def _is_inside_gate(self, range, bearing):
         inside_range = range < self.cfg.sensor.max_range
@@ -226,7 +215,7 @@ class FactorGraphSLAM:
         return inside_range and inside_fov
     
 
-    def _extract_joint_covariance(self, z_hat_ids: np.ndarray) -> np.ndarray:
+    def _extract_joint_covariance(self, query: list[int]) -> np.ndarray:
         """
         Extract joint covariance for last pose and predicted measurements 
         coresponding to the ids in z_hat_ids.
@@ -234,129 +223,33 @@ class FactorGraphSLAM:
         _t0 = time.perf_counter()
 
         # Check for no predicted measurements after gating, happens only at initalization
-        if len(z_hat_ids) == 0:
+        if len(query) <= 1:
             return np.zeros([3,3]) 
-        
-        # The order in which the keys are added is the order in which the covariance is returned
-        query = [X(self._n_poses)] + [L(id) for id in z_hat_ids]   
-        
-        covariance = self.isam2.jointMarginalCovariance(query) # TODO: for new version, assume you can use .at(qurey) to get correct ordering
-        
-        # jointMarginalCov = self.isam2.jointMarginalCovariance(query)
-        # covariance = jointMarginalCov.at(query) # covariance = jointMarginalCov.fullMatrix() does not give correct ordering, i think. Have to check source
-
-
-        # Reorder covariance to match state ordering
-        covariance = reorder_covariance_naive(covariance) # TODO: maybe make more secure, see comment above
+    
+        covariance = self.isam2.jointMarginalCovariance(query) 
+        covariance = reorder_covariance_naive(covariance) 
 
         self.step_metrics["t_covariance_extraction"] = time.perf_counter() - _t0
         return covariance
-
-
-    def _compute_innovation_covariance(
-        self,
-        zbar_ids: np.ndarray,
-        Sigma_joint: np.ndarray,
-    ):
-        """Compute measurement/innovation covariance for predicted measurements."""
-        m = np.array([self.isam2.calculateEstimatePoint2(L(id)) for id in zbar_ids]) # (M', 2)
-        p = pose2_to_array(self.isam2.calculateEstimatePose2(X(self._n_poses))) # (3,)
-        
-        S = self.sensor.predicted_measurement_covariance(p, m, Sigma_joint)
-        S = make_psd(S) 
-        return S
-
-    def _compute_association(
-        self,
-        z: np.ndarray,
-        zbar: np.ndarray,
-        zbar_ids: np.ndarray,
-        S: np.ndarray,
-    ) -> np.ndarray:
-        """Compute association between measurements and predicted measurements.
-
-        Returns
-        -------
-        association_global
-            Landmark IDs for associated measurements, or -1 for unassociated ones.
-        """
-        t0 = time.perf_counter()
-
-        association_local  = self.associator.associate(z, zbar, S)
-        association_global = association_local.copy()  
-        for i, a in enumerate(association_local):
-            if a >= 0:
-                association_global[i] = zbar_ids[a]
-
-        self.step_metrics["t_association"] = time.perf_counter() - t0
-        return association_global
     
 
-    def _handle_association(self, measurements: np.ndarray, association: np.ndarray):
-        associated_mask   = association >= 0
-        unassociated_mask = association == -1
-
-        self._add_associated_landmark_measurements(
-            measurements[associated_mask], association[associated_mask]
-        )
-        confirmed_tentatives = self._process_unassociated_measurements(
-            measurements[unassociated_mask],
-        )
-        self._promote_tentative_landmarks(confirmed_tentatives)
-
-        
-        self.step_metrics["n_associated"] = np.sum(associated_mask)
-        self.step_metrics["n_unassociated"] = np.sum(unassociated_mask)
-        
-
-    def _add_associated_landmark_measurements(
+    def _add_bearing_range_factors(
         self, 
         measurements: np.ndarray, 
-        associations: np.ndarray
+        associated_landmark_keys: list[int]
     ):
         """Add factors for associated measurements."""
-        for (r, b), a_j in zip(measurements, associations):
+        for (r, b), j in zip(measurements, associated_landmark_keys):
             self._new_factors.add(
                 gtsam.BearingRangeFactor2D(
                     poseKey=X(self._n_poses), 
-                    pointKey=L(a_j), 
+                    pointKey=j, 
                     measuredBearing=gtsam.Rot2(b), 
                     measuredRange=r, 
                     noiseModel=self.bearing_range_noise
                 )
             )
-            
-    def _process_unassociated_measurements(
-        self,
-        measurements: np.ndarray,   # (M, 2), columns = [range, bearing]
-    ) -> list:
-        """
-        Send unassociated measurements to tentative landmark manager.
 
-        Returns a list of tentative landmarks that are now confirmed and ready
-        to be promoted into the factor graph.
-        """
-        pose_key = X(self._n_poses)
-        T_W_B = self.isam2.calculateEstimatePose2(pose_key)
-
-        world_positions = np.empty_like(measurements) # (M, 2)
-
-        for i, (r, b) in enumerate(measurements):
-            B_lm_x = r * np.cos(b)
-            B_lm_y = r * np.sin(b)
-            B_lm = gtsam.Point2(B_lm_x, B_lm_y)
-            W_lm = T_W_B.transformFrom(B_lm)
-
-            world_positions[i] = W_lm
-
-        confirmed_tentatives = self.tentative.process_unassociated_measurements(
-            current_step=self._n_poses,
-            measurements=measurements,
-            world_positions=world_positions,
-        )
-
-        return confirmed_tentatives
-    
     def _promote_tentative_landmarks(self, confirmed_tentatives: list[TentativeLandmark]) -> None:
         """
         Promote confirmed tentative landmarks into the factor graph.
@@ -364,6 +257,7 @@ class FactorGraphSLAM:
         for tentative_lm in confirmed_tentatives:
             
             new_lm_key = L(self._n_landmarks)
+            self._map_keys.append(new_lm_key)
             self._n_landmarks += 1
 
             self._new_values.insert(new_lm_key, tentative_lm.position)

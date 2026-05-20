@@ -124,8 +124,8 @@ class TentativeLandmarkManager:
     def process_unassociated_measurements(
         self,
         current_step: int,
-        measurements: np.ndarray,
-        world_positions: np.ndarray,
+        unassociated_measurements: np.ndarray,
+        new_tentative_landmarks: np.ndarray,
     ) -> list[TentativeLandmark]:
         """
         Main entry point for one timestep.
@@ -134,35 +134,36 @@ class TentativeLandmarkManager:
         ----------
         current_step : int
             Current timestep.
-        world_positions : np.ndarray Mx2 (x,y)
+        unassociated_measurements : np.ndarray, shape (M, 2)
+            Raw unassociated measurements in (range, bearing) form.
+        new_tentativ_landmarks : np.ndarray, shape (M, 2)
             Unassociated measurements transformed to world-frame 2D positions.
-        measurements : np.ndarray Mx2 (range, bearing)
-            The original raw measurements corresponding to world_positions
 
         Returns
         -------
         confirmed_landmarks : list[TentativeLandmark]
             Tentative landmarks that are ready to be promoted to graph landmarks.
         """
-        if world_positions.shape[0] != measurements.shape[0]:
-            raise ValueError("world_positions and measurement must have same length")
+        M = unassociated_measurements.shape[0]
+        if new_tentative_landmarks.shape != (M, 2):
+            raise ValueError(f"Expected new_tentative_landmarks to have shape ({M}, 2), got {new_tentative_landmarks.shape}")
+    
+        for i in range(M):
+            W_l = new_tentative_landmarks[i]
+            z = unassociated_measurements[i]
 
-        for i in range(len(world_positions)):
-            W_lm = world_positions[i]
-            z = measurements[i]
-
-            match_idx = self._find_best_match(W_lm, current_step)
+            match_idx = self._find_best_match(W_l, current_step)
 
             if match_idx is None:
                 self._spawn_tentative(
                     step=current_step,
-                    position=W_lm,
+                    position=W_l,
                     measurement=z,
                 )
             else:
                 self.tentative_landmarks[match_idx].update(
                     step=current_step,
-                    new_position=W_lm,
+                    new_position=W_l,
                     measurement=z,
                 )
 

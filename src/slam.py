@@ -9,12 +9,12 @@ from gtsam.symbol_shorthand import L, X
 from association import get_associator
 from config import SlamConfig
 from data_loader import LidarStepInput, WheelOdometry
+from div.utils_gtsam import reorder_covariance_naive
 from logger import SlamLogger
+from preprocessing import detect_trees, relative_pose
 from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
-from div.utils_gtsam import reorder_covariance_naive
 from utils import make_psd, pose2_to_array
-from preprocessing import detect_trees, relative_pose
 
 # TODO: visualize display(graphviz.Source(isam.dot()))
 
@@ -106,44 +106,43 @@ class FactorGraphSLAM:
         Sigma = np.zeros((3,3))
         
         for odo in odometry:
-            T_odo, J_odo_u = relative_pose(odo.velocity, odo.steering, odo.dt)
+            Delta_inc, J_delta_u = relative_pose(odo.velocity, odo.steering, odo.dt)
             # J_odo_u @ self.Q_input @ J_odo_u.T
-            Q_odo =  odo.dt * self.Q_output # TODO: consider J_odo_u
+            Sigma_inc = odo.dt * self.Q_output # TODO: consider J_odo_u
 
             H1 = np.zeros((3,3), order='F')
             H2 = np.zeros((3,3), order='F')
         
-            Delta = Delta.compose(T_odo, H1, H2)
-            Sigma = H1 @ Sigma @ H1.T + H2 @ Q_odo @ H2.T
+            Delta = Delta.compose(Delta_inc, H1, H2)
+            Sigma = H1 @ Sigma @ H1.T + H2 @ Sigma_inc @ H2.T
         
         return Delta, Sigma
     
-    def _add_odometry_factor(self, T_Bk_Bkp1: gtsam.Pose2, Sigma_Bk_Bkp1: np.ndarray):
-        
-        Bk = X(self._n_poses)
-        Bkp1 = X(self._n_poses + 1)
+    def _add_relative_pose_factor(self, Delta: gtsam.Pose2, Sigma: np.ndarray):
+        k = X(self._n_poses)
+        kp1 = X(self._n_poses + 1)
         self._n_poses += 1 
 
         # Add initial guess for new pose
-        T_W_Bk = self.isam2.calculateEstimatePose2(Bk)
-        T_W_Bkp1 = T_W_Bk.compose(T_Bk_Bkp1)
-        self._new_values.insert(Bkp1, T_W_Bkp1)
+        T_k = self.isam2.calculateEstimatePose2(k)
+        T_kp1 = T_k.compose(Delta)
+        self._new_values.insert(kp1, T_kp1)
 
-        # Odometry factor: measurement from Bk to Bkp1 
-        noise_model = gtsam.noiseModel.Gaussian.Covariance(Sigma_Bk_Bkp1)
+        # Odometry factor: measurement from k to kp1 
+        noise_model = gtsam.noiseModel.Gaussian.Covariance(Sigma)
 
         self._new_factors.add(
             gtsam.BetweenFactorPose2(
-                key1=Bk, 
-                key2=Bkp1, 
-                relativePose=T_Bk_Bkp1,
+                key1=k, 
+                key2=kp1, 
+                relativePose=Delta,
                 noiseModel=noise_model
             )
         )
     
     def _register_odometry(self, odometry: list[WheelOdometry]):
         T_Bk_Bkp1, Sigma_Bk_Bkp1 = self._preintegrate_odometry(odometry)
-        self._add_odometry_factor(T_Bk_Bkp1, Sigma_Bk_Bkp1)
+        self._add_relative_pose_factor(T_Bk_Bkp1, Sigma_Bk_Bkp1)
         self._optimize()
 
 
@@ -202,6 +201,23 @@ class FactorGraphSLAM:
         self.step_metrics["n_local_landmarks"] = len(z_hat)
 
         return np.array(z_hat), np.array(z_hat_ids)
+
+    def _get_local_map(self) -> gtsam.KeyList:
+        local_map = list()
+        T = self.isam2.calculateEstimatePose2(X(self._n_poses))
+        
+        for j in self.map:
+            lm = self.isam2.calculateEstimatePoint2(j)
+            
+            r = T.range(lm)
+            b = T.bearing(lm).theta()  
+            
+            if self._is_inside_gate(r, b):
+                local_map.append(j)
+        
+        self.step_metrics["n_local_landmarks"] = len(local_map)
+
+        return local_map
 
 
     def _is_inside_gate(self, range, bearing):

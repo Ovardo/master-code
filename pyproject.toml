@@ -1,50 +1,14 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "master-thesis-slam"
+name = "master-code"
 version = "0.1.0"
-description = "SLAM experiments and thesis code for NTNU TTK4900."
+description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [
-  { name = "Ovar Skjevdal" },
-]
+requires-python = ">=3.11"
 dependencies = [
-  "matplotlib",
-  "numpy",
-  "omegaconf",
-  "scipy",
-  "shapely",
-  "tqdm",
-  "visgeom @ https://github.com/tussedrotten/visgeom/archive/master.zip",
-  "lap",
+    "gtsam-develop>=4.3a1.dev202605181902",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.6",
+    "omegaconf>=2.3.0",
+    "scipy>=1.17.1",
+    "tqdm>=4.67.3",
 ]
-
-[project.optional-dependencies]
-dev = [
-  "ipykernel",
-  "jupyter",
-  "ruff",
-]
-
-[project.scripts]
-run-real-slam = "run_real_SLAM:main"
-
-[tool.setuptools]
-package-dir = { "" = "src" }
-py-modules = [
-  "association",
-  "config",
-  "data_loader",
-  "factor_graph_slam",
-  "tentative",
-  "run_real_SLAM",
-  "timing_profiler",
-]
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["models", "models.*", "plotting", "plotting.*", "utils", "utils.*"]

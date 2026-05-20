@@ -31,7 +31,7 @@ def main() -> None:
     )
 
     # Num lidar scan steps
-    K = 1000 # max is 7248
+    K = 7300 # max is 7248
 
     records = []
 

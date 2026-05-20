@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-import lap
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
@@ -229,76 +228,77 @@ def num_associations(array):
     return np.count_nonzero(array > -1)
 
 
-# Not fully tested
-def ML_association(z, zbar, S, alpha_individual,
-                   alpha_ambiguous=0.95,
-                   outlier_cost=None):
-    """
-    Returns:
-        a: (M,) with -1 unassociated, -2 ambiguous, >=0 index into zbar
-    """
-    M = z.shape[0]
-    L = zbar.shape[0]
+# # Not fully tested
+# def ML_association(z, zbar, S, alpha_individual,
+#                    alpha_ambiguous=0.95,
+#                    outlier_cost=None):
+#     """
+#     Returns:
+#         a: (M,) with -1 unassociated, -2 ambiguous, >=0 index into zbar
+#     """
+#     M = z.shape[0]
+#     L = zbar.shape[0]
 
-    if M == 0:
-        return np.array([], dtype=int)
-    if L == 0:
-        return np.full(M, -1, dtype=int)
+#     if M == 0:
+#         return np.array([], dtype=int)
+#     if L == 0:
+#         return np.full(M, -1, dtype=int)
 
-    # Individual compatibility costs (Mahalanobis^2)
-    ic = individualCompatibility(z, zbar, S).astype(float)  # shape (M, L)
+#     # Individual compatibility costs (Mahalanobis^2)
+#     ic = individualCompatibility(z, zbar, S).astype(float)  # shape (M, L)
 
-    # Chi-square gates (2 DOF)
-    threshold_new = chi2.isf(1 - alpha_individual, df=2)
-    threshold_amb = chi2.isf(1 - alpha_ambiguous, df=2)
+#     # Chi-square gates (2 DOF)
+#     threshold_new = chi2.isf(1 - alpha_individual, df=2)
+#     threshold_amb = chi2.isf(1 - alpha_ambiguous, df=2)
 
-    # Decide outlier_cost if not provided:
-    # A common choice is the new-landmark gate itself or slightly below/above it.
-    if outlier_cost is None:
-        outlier_cost = threshold_new  # reasonable default
+#     # Decide outlier_cost if not provided:
+#     # A common choice is the new-landmark gate itself or slightly below/above it.
+#     if outlier_cost is None:
+#         outlier_cost = threshold_new  # reasonable default
 
-    # 1) Gate impossible pairs
-    BIG = 1e9
-    gated = ic.copy()
-    gated[gated > threshold_new] = BIG
+#     # 1) Gate impossible pairs
+#     BIG = 1e9
+#     gated = ic.copy()
+#     gated[gated > threshold_new] = BIG
 
-    # 2) Add dummy columns (one per measurement) to allow "no match"
-    # Cost to assign measurement i to its own dummy column = outlier_cost
-    dummy = np.full((M, M), outlier_cost, dtype=float)
+#     # 2) Add dummy columns (one per measurement) to allow "no match"
+#     # Cost to assign measurement i to its own dummy column = outlier_cost
+#     dummy = np.full((M, M), outlier_cost, dtype=float)
 
-    # Full cost matrix: (M, L+M)
-    C = np.hstack([gated, dummy])
+#     # Full cost matrix: (M, L+M)
+#     C = np.hstack([gated, dummy])
 
-    # 3) Solve assignment
-    total_cost, x, y = lap.lapjv(C, extend_cost=True)
+#     # 3) Solve assignment
+#     import lap
+#     total_cost, x, y = lap.lapjv(C, extend_cost=True)
 
-    # 4) Decode solution
-    a = np.full(M, -1, dtype=int)
-    for i in range(M):
-        j = x[i]
-        if j < 0:
-            a[i] = -1
-            continue
+#     # 4) Decode solution
+#     a = np.full(M, -1, dtype=int)
+#     for i in range(M):
+#         j = x[i]
+#         if j < 0:
+#             a[i] = -1
+#             continue
 
-        if j < L:
-            # assigned to a real landmark
-            cij = ic[i, j]  # original (ungated) cost
-            if cij > threshold_new:
-                # should not happen if gating worked, but safe
-                a[i] = -1
-            elif cij > threshold_amb:
-                a[i] = -2
-            else:
-                a[i] = j
-        else:
-            # assigned to dummy => no association
-            # If you want to label "ambiguous" when it's close to being plausible:
-            # (e.g. best real match is between threshold_amb and threshold_new)
-            best_real = np.min(ic[i]) if L > 0 else np.inf
-            if threshold_amb < best_real <= threshold_new:
-                a[i] = -2
-            else:
-                a[i] = -1
+#         if j < L:
+#             # assigned to a real landmark
+#             cij = ic[i, j]  # original (ungated) cost
+#             if cij > threshold_new:
+#                 # should not happen if gating worked, but safe
+#                 a[i] = -1
+#             elif cij > threshold_amb:
+#                 a[i] = -2
+#             else:
+#                 a[i] = j
+#         else:
+#             # assigned to dummy => no association
+#             # If you want to label "ambiguous" when it's close to being plausible:
+#             # (e.g. best real match is between threshold_amb and threshold_new)
+#             best_real = np.min(ic[i]) if L > 0 else np.inf
+#             if threshold_amb < best_real <= threshold_new:
+#                 a[i] = -2
+#             else:
+#                 a[i] = -1
 
-    return a
+#     return a
 

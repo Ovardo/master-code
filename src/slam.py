@@ -84,8 +84,11 @@ class FactorGraphSLAM:
         query_cov      = self._extract_joint_covariance(query)
         innovation_cov = self.sensor.innovation_covariance(T_kp1, local_map, query_cov)   
         local_z_hat    = self.sensor.h(T_kp1, local_map)
-       
+        
+        t_association = time.perf_counter()
         association = self.associator.associate(z, local_z_hat, innovation_cov)
+        self.step_metrics["t_association"] = time.perf_counter() - t_association
+
         is_associated   = association >= 0
         z_associated    = z[is_associated]
         z_unassociated  = z[~is_associated]
@@ -226,7 +229,7 @@ class FactorGraphSLAM:
         if len(query) <= 1:
             return np.zeros([3,3]) 
     
-        covariance = self.isam2.jointMarginalCovariance(query) 
+        covariance = self.isam2.jointMarginalCovariance(query).fullMatrix()
         covariance = reorder_covariance_naive(covariance) 
 
         self.step_metrics["t_covariance_extraction"] = time.perf_counter() - _t0

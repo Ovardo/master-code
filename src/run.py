@@ -15,10 +15,10 @@ def main() -> None:
     
     output_dir = Path("runs") / datetime.now().strftime("run_%Y%m%d_%H%M%S")
 
-    config_name = "vp1.yaml"
+    config_name = "vp1_diverging.yaml"
     config = SlamConfig.load(config_name)
     logger = SlamLogger(output_dir, config.logging)
-    config.save(output_dir / config_name)
+    config.save(output_dir / "config.yaml")
 
     # Data-loader
     loader = VictoriaParkLoader()

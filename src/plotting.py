@@ -11,6 +11,7 @@ from scipy.stats import chi2
 from association import NIS, individualCompatibility
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
+from config import SlamConfig
 from utils import rotmat2
 
 
@@ -515,7 +516,8 @@ def plot_association_nis(
     alpha_joint: float = 0.9999,
 ) -> plt.Figure:
     """Plot joint association NIS over saved diagnostic scans."""
-    scan_steps = np.array([int(item["scan_step"][0]) for item in diagnostics], dtype=int)
+    scan_steps = np.array([int(item["scan_step"][0]) for item in diagnostics], dtype=int) 
+    
     stats = [
         compute_association_statistics(
             item,
@@ -528,7 +530,6 @@ def plot_association_nis(
     expected = np.array([float(item["joint_nis_expected"]) for item in stats], dtype=float)
     upper = np.array([float(item["joint_nis_upper"]) for item in stats], dtype=float)
     lower = np.array([float(item["joint_nis_lower"]) for item in stats], dtype=float)
-    per_dof = np.array([float(item["joint_nis_per_dof"]) for item in stats], dtype=float)
     dof = np.array([int(item["joint_nis_dof"]) for item in stats], dtype=int)
     valid = (dof > 0) & np.isfinite(joint_nis)
 
@@ -541,10 +542,10 @@ def plot_association_nis(
         axes[0].plot(scan_steps[valid], lower[valid], lw=0.8, color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$") 
 
 
-        axes[1].plot(scan_steps[valid], per_dof[valid], lw=1.1, color="steelblue", label="NIS / dof")
+        axes[1].plot(scan_steps[valid], joint_nis[valid] / dof[valid], lw=1.1, color="steelblue", label="NIS / dof")
         axes[1].axhline(1.0, lw=0.9, ls=":", color="tomato", label="E[NIS / dof] = 1")
-        axes[1].axhline(chi2.isf(1 - alpha_joint, 1), lw=0.9, ls="--", color="green", label=r"$\chi^2_{{1},\alpha_{joint}}$ (upper bound)")
-        axes[1].axhline(chi2.isf(alpha_joint, 1), lw=0.9, ls="--", color="orange", label=r"$\chi^2_{{1},1-\alpha_{joint}}$") 
+        axes[1].plot(scan_steps[valid], upper[valid] / dof[valid], lw=0.9, ls="--", color="green", label=r"$\chi^2_{{1},\alpha_{joint}}$ (upper bound)")
+        axes[1].plot(scan_steps[valid], lower[valid] / dof[valid], lw=0.9, ls="--", color="orange", label=r"$\chi^2_{{1},1-\alpha_{joint}}$") 
     else:
         axes[0].text(0.5, 0.5, "No associated measurements in saved diagnostics", ha="center", va="center")
         axes[1].text(0.5, 0.5, "No normalized NIS values", ha="center", va="center")
@@ -586,6 +587,7 @@ def save_run_figures(
     out_dir = Path(run_dir) / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    cfg = SlamConfig.load(run_dir / "config.yaml")
     scan_steps = steps["scan_step"]
 
     figures = {
@@ -634,8 +636,8 @@ def save_run_figures(
     if association_diagnostics:
         figures["association_nis"] = plot_association_nis(
             association_diagnostics,
-            alpha_individual=0.09999, # TODO add into function 
-            alpha_joint=0.9999,
+            alpha_individual=cfg.association.alpha_individual,
+            alpha_joint=cfg.association.alpha_joint,
         )
 
     paths = []

@@ -1,1 +1,1 @@
-from .parser import SlamConfig
+from .parser import SlamConfig, LoggingConfig

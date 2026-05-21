@@ -10,11 +10,11 @@ from association import get_associator
 from config import SlamConfig
 from data_loader import LidarStepInput, WheelOdometry
 from div.utils_gtsam import reorder_covariance_naive
-from logger import SlamLogger
+from logger import SlamLogger, AssociationDiagnostics
 from preprocessing import detect_trees, relative_pose
 from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
-from utils import make_psd, pose2_to_array
+from utils import pose2_to_array
 
 # TODO: visualize display(graphviz.Source(isam.dot()))
 
@@ -99,12 +99,21 @@ class FactorGraphSLAM:
         self.step_metrics.clear() # clear diagnostic info from previous step
         
         T_k = self._register_odometry(data.odometry)
-        self._register_scan(data.scan, T_k)
+        self._register_scan(data.scan, T_k, data.scan_step, data.scan_time)
 
         self.step_metrics["scan_time"] = data.scan_time
         self.step_metrics["scan_step"] = data.scan_step
         self.step_metrics["n_landmarks"] = self.num_landmarks
         self.step_metrics["t_update"] = time.perf_counter() - _t0
+
+        # self.logger.save_step(self.step_metrics)
+        
+        if self.logger.should_save_snapshot(data.scan_step):
+            self.logger.save_snapshot(
+                step=data.scan_step, 
+                snapshot=self.get_snapshot(), 
+                final=False
+            )
         
         return self.step_metrics.copy()
     
@@ -127,7 +136,13 @@ class FactorGraphSLAM:
         return T_kp1
     
     
-    def _register_scan(self, scan: np.ndarray, T_k: gtsam.Pose2) -> None:
+    def _register_scan(
+        self,
+        scan: np.ndarray,
+        T_k: gtsam.Pose2,
+        scan_step: int,
+        scan_time: float,
+    ) -> None:
         z = self._detect_measurements(scan)
 
         local_lm, local_lm_keys = self._get_local_landmarks(T_k)
@@ -137,6 +152,8 @@ class FactorGraphSLAM:
             T_k=T_k,
             local_lm=local_lm,
             local_lm_keys=local_lm_keys,
+            scan_step=scan_step,
+            scan_time=scan_time,
         )
 
         self._handle_association(
@@ -202,12 +219,14 @@ class FactorGraphSLAM:
         T_k: gtsam.Pose2,
         local_lm: np.ndarray,
         local_lm_keys: list[int],
+        scan_step: int,
+        scan_time: float,
     ) -> np.ndarray:
 
         query = [self._poses_keys[-1]] + local_lm_keys
         query_cov = self._extract_joint_covariance(query)
 
-        innovation_cov = self.sensor.innovation_covariance(T_k , local_lm, query_cov)
+        innovation_cov = self.sensor.innovation_covariance(T_k, local_lm, query_cov)
 
         z_pred = self.sensor.h(T_k, local_lm)
 
@@ -218,6 +237,22 @@ class FactorGraphSLAM:
             innovation_cov,
         )
         self.step_metrics["t_association"] = time.perf_counter() - t0
+
+        if self.logger.should_save_association_diagnostics(scan_step):
+            self.logger.save_association_diagnostics(
+                AssociationDiagnostics(
+                    scan_step=scan_step,
+                    scan_time=scan_time,
+                    pose_index=self.num_poses,
+                    pose=pose2_to_array(T_k),
+                    measurements=z,
+                    predicted_measurements=z_pred,
+                    association=association,
+                    local_landmarks=local_lm,
+                    local_landmark_keys=local_lm_keys,
+                    innovation_covariance=innovation_cov,
+                )
+            )
 
         return association
     
@@ -285,7 +320,11 @@ class FactorGraphSLAM:
         if len(query) <= 1:
             return np.zeros([3,3]) 
     
-        covariance = self.isam2.jointMarginalCovariance(query).fullMatrix()
+        joint_covariance = self.isam2.jointMarginalCovariance(query)
+        if hasattr(joint_covariance, "fullMatrix"):
+            covariance = joint_covariance.fullMatrix()
+        else:
+            covariance = np.asarray(joint_covariance)
         covariance = reorder_covariance_naive(covariance) 
 
         self.step_metrics["t_covariance_extraction"] = time.perf_counter() - _t0
@@ -357,7 +396,11 @@ class FactorGraphSLAM:
 
     def get_landmarks_covariance(self) -> np.ndarray:
         """Get marginal covariances for all landmark estimates (#landmarks,2,2)"""
-        return np.stack([self.isam2.marginalCovariance(L(lm)) for lm in range(self.num_landmarks)], axis=0)
+        covariances = [self.isam2.marginalCovariance(L(lm)) for lm in range(self.num_landmarks)]
+        if covariances:
+            return np.stack(covariances, axis=0)
+        else:
+            return np.array([])
     
     def get_snapshot(self) -> dict[str, np.ndarray]:
         """Get snapshot of current state for logging."""

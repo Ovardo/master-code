@@ -14,10 +14,10 @@ from slam import FactorGraphSLAM
 def main() -> None:
     
     output_dir = Path("runs") / datetime.now().strftime("run_%Y%m%d_%H%M%S")
-    logger = SlamLogger(output_dir)
 
     config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)
+    logger = SlamLogger(output_dir, config.logging)
     config.save(output_dir / config_name)
 
     # Data-loader
@@ -31,7 +31,7 @@ def main() -> None:
     )
 
     # Num lidar scan steps
-    K = 7300 # max is 7248
+    K = 1000 # max is 7248
 
     records = []
 
@@ -41,8 +41,6 @@ def main() -> None:
         record = slam.update(meas)
  
         if k % 200 == 0 and k > 0:
-            snapshot = slam.get_snapshot()
-            logger.save_snapshot(k, snapshot)
             
             record['fg_error'] = slam.get_error()
             record['n_factors'] = slam.get_num_factors()

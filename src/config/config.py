@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -173,10 +173,24 @@ class AssociationConfig:
         if not (0 < self.alpha_joint < 1):
             raise ValueError(f"alpha_joint must be in (0, 1), got {self.alpha_joint}")
 
-        
 
+@dataclass
+class LoggingConfig:
+    """Configuration for optional diagnostic logging."""
+    log_association_diagnostics: bool = True
+    association_stride: int = 200
+    association_steps: list[int] = field(default_factory=list)
 
+    log_snapshot: bool = True
+    snapshot_stride: int = 200
+    snapshot_steps: list[int] = field(default_factory=list)
 
-
-
-
+    def __post_init__(self):
+        if self.association_stride <= 0:
+            raise ValueError(f"association_stride must be positive, got {self.association_stride}")
+        if any(step < 0 for step in self.association_steps):
+            raise ValueError("association_steps must contain non-negative scan steps")
+        if self.snapshot_stride <= 0:
+            raise ValueError(f"snapshot_stride must be positive, got {self.snapshot_stride}")
+        if any(step < 0 for step in self.snapshot_steps):
+            raise ValueError("snapshot_steps must contain non-negative scan steps")

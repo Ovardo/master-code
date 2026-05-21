@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Python environment
-Use the python enviroment at "/Users/ovar/miniforge3/envs/gtsam_ftr"
+Use the python enviroment at ".venv" for running code
 
 ## Project overview
 This repository contains the codebase for my master thesis project on SLAM. The main focus is on implementing a factor graph-based SLAM system using GTSAM, with a custom data pipeline and association logic. The code is organized into several modules:

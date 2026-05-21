@@ -6,7 +6,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Ellipse
+from scipy.stats import chi2
 
+from association import NIS, individualCompatibility
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
 from utils import rotmat2
@@ -282,6 +284,297 @@ def plot_gnss_pose_error(
     return fig
 
 
+def _measurement_points_world(pose: np.ndarray, measurements: np.ndarray) -> np.ndarray:
+    """Transform range-bearing measurements to world-frame endpoints."""
+    measurements = np.asarray(measurements, dtype=float).reshape(-1, 2)
+    if len(measurements) == 0:
+        return np.empty((0, 2))
+
+    ranges = measurements[:, 0]
+    bearings = measurements[:, 1]
+    local_points = np.column_stack((ranges * np.cos(bearings), ranges * np.sin(bearings)))
+    return pose[:2] + local_points @ rotmat2(pose[2]).T
+
+
+def _bearing_range_plot_points(measurements: np.ndarray) -> np.ndarray:
+    """Return points as [bearing deg, range] for innovation-space plots."""
+    measurements = np.asarray(measurements, dtype=float).reshape(-1, 2)
+    if len(measurements) == 0:
+        return np.empty((0, 2))
+    return np.column_stack((np.rad2deg(measurements[:, 1]), measurements[:, 0]))
+
+
+def compute_association_statistics(
+    diagnostics: dict[str, np.ndarray],
+    alpha_individual: float = 0.999,
+    alpha_joint: float = 0.9999,
+) -> dict[str, float | int | np.ndarray]:
+    """Compute derived association statistics from raw saved association data."""
+    measurements = np.asarray(diagnostics["measurements"], dtype=float).reshape(-1, 2)
+    predicted = np.asarray(diagnostics["predicted_measurements"], dtype=float).reshape(-1, 2)
+    association = np.asarray(diagnostics["association"], dtype=int).reshape(-1)
+    innovation_cov = np.asarray(diagnostics["innovation_covariance"], dtype=float)
+
+    n_associated = int(np.sum(association >= 0))
+    dof = 2 * n_associated
+
+    individual_compatibility = individualCompatibility(measurements, predicted, innovation_cov)
+    individual_gate = float(chi2.isf(1 - alpha_individual, 2))
+
+    if dof == 0:
+        joint_nis = np.nan
+        joint_expected = np.nan
+        joint_upper = np.nan
+        joint_lower = np.nan
+        joint_per_dof = np.nan
+    else:
+        joint_nis = float(NIS(measurements, predicted, innovation_cov, association))
+        joint_expected = float(dof)
+        joint_upper = float(chi2.isf(1 - alpha_joint, dof))
+        joint_lower = float(chi2.isf(alpha_joint, dof))
+        joint_per_dof = joint_nis / dof
+
+    return {
+        "individual_compatibility": individual_compatibility,
+        "individual_gate": individual_gate,
+        "joint_nis": joint_nis,
+        "joint_nis_dof": dof,
+        "joint_nis_expected": joint_expected,
+        "joint_nis_upper": joint_upper,
+        "joint_nis_lower": joint_lower,
+        "joint_nis_per_dof": joint_per_dof,
+    }
+
+
+def plot_association_diagnostics(
+    diagnostics: dict[str, np.ndarray],
+    show_covariances: bool = True,
+    alpha_individual: float = 0.999,
+    alpha_joint: float = 0.9999,
+) -> plt.Figure:
+    """Plot one saved association diagnostic in world space and innovation space."""
+    scan_step = int(diagnostics["scan_step"][0])
+    pose = np.asarray(diagnostics["pose"], dtype=float).reshape(3)
+    measurements = np.asarray(diagnostics["measurements"], dtype=float).reshape(-1, 2)
+    predicted = np.asarray(diagnostics["predicted_measurements"], dtype=float).reshape(-1, 2)
+    association = np.asarray(diagnostics["association"], dtype=int).reshape(-1)
+    local_landmarks = np.asarray(diagnostics["local_landmarks"], dtype=float).reshape(-1, 2)
+    innovation_cov = np.asarray(diagnostics["innovation_covariance"], dtype=float)
+    stats = compute_association_statistics(
+        diagnostics,
+        alpha_individual=alpha_individual,
+        alpha_joint=alpha_joint,
+    )
+
+    measurement_world = _measurement_points_world(pose, measurements)
+    measurement_br = _bearing_range_plot_points(measurements)
+    predicted_br = _bearing_range_plot_points(predicted)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+    world_ax, innovation_ax = axes
+
+    world_ax.scatter(pose[0], pose[1], c="black", marker="o", s=45, label="Robot")
+    heading = rotmat2(pose[2]) @ np.array([2.0, 0.0])
+    world_ax.arrow(
+        pose[0],
+        pose[1],
+        heading[0],
+        heading[1],
+        width=0.05,
+        head_width=0.5,
+        length_includes_head=True,
+        color="black",
+        alpha=0.8,
+    )
+
+    if len(local_landmarks) > 0:
+        world_ax.scatter(
+            local_landmarks[:, 0],
+            local_landmarks[:, 1],
+            c="tomato",
+            marker="x",
+            s=45,
+            label="Predicted landmarks",
+        )
+
+    if len(measurement_world) > 0:
+        is_associated = association >= 0
+        world_ax.scatter(
+            measurement_world[~is_associated, 0],
+            measurement_world[~is_associated, 1],
+            c="dimgray",
+            marker=".",
+            s=45,
+            label="Unassociated measurements",
+        )
+        world_ax.scatter(
+            measurement_world[is_associated, 0],
+            measurement_world[is_associated, 1],
+            c="steelblue",
+            marker=".",
+            s=55,
+            label="Associated measurements",
+        )
+
+        for i, predicted_idx in enumerate(association):
+            if predicted_idx < 0:
+                continue
+            world_ax.plot(
+                [measurement_world[i, 0], local_landmarks[predicted_idx, 0]],
+                [measurement_world[i, 1], local_landmarks[predicted_idx, 1]],
+                color="seagreen",
+                lw=0.9,
+                alpha=0.7,
+            )
+
+    world_ax.set_title(f"Association Result, Scan {scan_step}")
+    world_ax.set_xlabel("X (m)")
+    world_ax.set_ylabel("Y (m)")
+    world_ax.set_aspect("equal")
+    world_ax.grid(True, lw=0.4)
+    world_ax.legend(fontsize=8)
+
+    if len(predicted_br) > 0:
+        innovation_ax.scatter(
+            predicted_br[:, 0],
+            predicted_br[:, 1],
+            c="tomato",
+            marker="x",
+            s=45,
+            label="Predicted",
+        )
+
+    if len(measurement_br) > 0:
+        is_associated = association >= 0
+        innovation_ax.scatter(
+            measurement_br[~is_associated, 0],
+            measurement_br[~is_associated, 1],
+            c="dimgray",
+            marker=".",
+            s=45,
+            label="Unassociated",
+        )
+        innovation_ax.scatter(
+            measurement_br[is_associated, 0],
+            measurement_br[is_associated, 1],
+            c="steelblue",
+            marker=".",
+            s=55,
+            label="Associated",
+        )
+
+        for i, predicted_idx in enumerate(association):
+            if predicted_idx < 0:
+                continue
+            innovation_ax.plot(
+                [measurement_br[i, 0], predicted_br[predicted_idx, 0]],
+                [measurement_br[i, 1], predicted_br[predicted_idx, 1]],
+                color="seagreen",
+                lw=0.9,
+                alpha=0.7,
+            )
+
+    if show_covariances and innovation_cov.shape == (2 * len(predicted), 2 * len(predicted)):
+        transform = np.array([[0.0, 180.0 / np.pi], [1.0, 0.0]])
+        for j, center in enumerate(predicted_br):
+            cov_rb = innovation_cov[2 * j : 2 * j + 2, 2 * j : 2 * j + 2]
+            cov_br = transform @ cov_rb @ transform.T
+            innovation_ax.add_patch(
+                confidence_ellipse_2d(
+                    center,
+                    cov_br,
+                    fc="none",
+                    ec="tomato",
+                    alpha=0.35,
+                    lw=0.7,
+                )
+            )
+
+    joint_nis = float(stats["joint_nis"])
+    joint_expected = float(stats["joint_nis_expected"])
+    joint_upper = float(stats["joint_nis_upper"])
+    nis_title = "Innovation Space"
+    if np.isfinite(joint_nis):
+        nis_title += f" (NIS {joint_nis:.1f}, E {joint_expected:.1f}, upper {joint_upper:.1f})"
+
+    innovation_ax.set_title(nis_title)
+    innovation_ax.set_xlabel("Bearing (deg)")
+    innovation_ax.set_ylabel("Range (m)")
+    innovation_ax.grid(True, lw=0.4)
+    handles, _ = innovation_ax.get_legend_handles_labels()
+    if handles:
+        innovation_ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_association_nis(
+    diagnostics: list[dict[str, np.ndarray]],
+    alpha_individual: float = 0.999,
+    alpha_joint: float = 0.9999,
+) -> plt.Figure:
+    """Plot joint association NIS over saved diagnostic scans."""
+    scan_steps = np.array([int(item["scan_step"][0]) for item in diagnostics], dtype=int)
+    stats = [
+        compute_association_statistics(
+            item,
+            alpha_individual=alpha_individual,
+            alpha_joint=alpha_joint,
+        )
+        for item in diagnostics
+    ]
+    joint_nis = np.array([float(item["joint_nis"]) for item in stats], dtype=float)
+    expected = np.array([float(item["joint_nis_expected"]) for item in stats], dtype=float)
+    upper = np.array([float(item["joint_nis_upper"]) for item in stats], dtype=float)
+    lower = np.array([float(item["joint_nis_lower"]) for item in stats], dtype=float)
+    per_dof = np.array([float(item["joint_nis_per_dof"]) for item in stats], dtype=float)
+    dof = np.array([int(item["joint_nis_dof"]) for item in stats], dtype=int)
+    valid = (dof > 0) & np.isfinite(joint_nis)
+
+    fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+
+    if np.any(valid):   
+        axes[0].plot(scan_steps[valid], joint_nis[valid], lw=1.2, color="steelblue", label="NIS")
+        axes[0].plot(scan_steps[valid], expected[valid], lw=0.6, color="tomato", label="E[NIS] = dof")
+        axes[0].plot(scan_steps[valid], upper[valid], lw=0.6, color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$ (upper bound)")
+        axes[0].plot(scan_steps[valid], lower[valid], lw=0.8, color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$") 
+
+
+        axes[1].plot(scan_steps[valid], per_dof[valid], lw=1.1, color="steelblue", label="NIS / dof")
+        axes[1].axhline(1.0, lw=0.9, ls=":", color="tomato", label="E[NIS / dof] = 1")
+        axes[1].axhline(chi2.isf(1 - alpha_joint, 1), lw=0.9, ls="--", color="green", label=r"$\chi^2_{{1},\alpha_{joint}}$ (upper bound)")
+        axes[1].axhline(chi2.isf(alpha_joint, 1), lw=0.9, ls="--", color="orange", label=r"$\chi^2_{{1},1-\alpha_{joint}}$") 
+    else:
+        axes[0].text(0.5, 0.5, "No associated measurements in saved diagnostics", ha="center", va="center")
+        axes[1].text(0.5, 0.5, "No normalized NIS values", ha="center", va="center")
+
+    axes[0].set_ylabel("NIS")
+    axes[0].set_title("Association Joint NIS")
+    if np.any(valid):
+        axes[0].legend(loc="upper left", fontsize=8)
+    axes[0].grid(True, lw=0.4)
+
+    axes[1].set_xlabel("Scan step")
+    axes[1].set_ylabel("NIS / DOF")
+    axes[1].set_title("Association NIS per Degree of Freedom")
+    if np.any(valid):
+        axes[1].legend(loc="upper left", fontsize=8)
+    axes[1].grid(True, lw=0.4)
+
+    fig.tight_layout()
+    return fig
+
+
+# class SlamPlotter:
+#     """Utility class for plotting SLAM runs from saved logs and snapshots."""
+#     def __init__(self, run_dir: Path | str):
+#         self.run_dir  = Path(run_dir)
+#         self.steps     = SlamLogger.load_steps(self.run_dir)
+#         self.estimates = SlamLogger.load_snapshot(self.run_dir / "snapshots" / "snap_final.npz")
+#         self.association_diagnostics = SlamLogger.load_all_association_diagnostics(self.run_dir)
+    
+
 def save_run_figures(
     run_dir: Path | str,
     steps: dict[str, np.ndarray],
@@ -328,12 +621,22 @@ def save_run_figures(
             error=steps["fg_error"],
             n_factors=steps["n_factors"],
         ),
-        "gnss_pose_error": plot_gnss_pose_error(
+    }
+
+    if gnss is not None:
+        figures["gnss_pose_error"] = plot_gnss_pose_error(
             gnss=gnss,
             poses=snapshot.get("poses"),
             pose_times=steps["scan_time"],
-        ) 
-    }
+        )
+
+    association_diagnostics = SlamLogger.load_all_association_diagnostics(run_dir)
+    if association_diagnostics:
+        figures["association_nis"] = plot_association_nis(
+            association_diagnostics,
+            alpha_individual=0.09999, # TODO add into function 
+            alpha_joint=0.9999,
+        )
 
     paths = []
     for name, fig in figures.items():
@@ -356,6 +659,8 @@ def main() -> None:
     parser.add_argument("--fmt", default="pdf", choices=["pdf", "png", "svg"])
     parser.add_argument("--gnss", action="store_true")
     parser.add_argument("--show", action="store_true")
+    parser.add_argument("--alpha-individual", type=float, default=0.999)
+    parser.add_argument("--alpha-joint", type=float, default=0.9999)
     args = parser.parse_args()
 
     run_dir = args.run_dir
@@ -370,9 +675,14 @@ def main() -> None:
         gnss=gnss,
         fmt=args.fmt,
         show=args.show,
+        association_alpha_individual=args.alpha_individual,
+        association_alpha_joint=args.alpha_joint,
     )
 
 
 if __name__ == "__main__":
-    main()
+    diag = SlamLogger.load_association_diagnostics("/Users/ovar/Documents/Master/master_code/runs/run_20260521_015933/associations/assoc_00999.npz")
+    fig = plot_association_diagnostics(diag)
+    plt.show()
+    # main()
     

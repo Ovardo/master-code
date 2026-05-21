@@ -140,11 +140,22 @@ class RangeBearing:
         H2_r = np.zeros((1,2), order='F')
         H2_b = np.zeros((1,2), order='F')
        
-        T_k.range(l_i, H1_r, H2_r)
-        T_k.bearing(l_i, H1_b, H2_b)
-        
-        H1_ = np.vstack((H1_r, H1_b))
-        H2_ = np.vstack((H2_r, H2_b))
+        try:
+            T_k.range(l_i, H1_r, H2_r)
+            T_k.bearing(l_i, H1_b, H2_b)
+            
+            H1_ = np.vstack((H1_r, H1_b))
+            H2_ = np.vstack((H2_r, H2_b))
+        except TypeError:
+            x = np.array([T_k.x(), T_k.y(), T_k.theta()])
+            numpy_model = RangeBearingNumpy(
+                sigma_range=self.sigma_range,
+                sigma_bearing=self.sigma_bearing,
+                max_range=self.max_range,
+                max_fov=self.max_fov,
+            )
+            H1_ = numpy_model.H_x(x, l_i)
+            H2_ = numpy_model.H_m(x, l_i)
 
         return H1_, H2_
 

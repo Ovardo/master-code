@@ -7,6 +7,7 @@ from omegaconf import OmegaConf
 
 from config.config import (
     AssociationConfig,
+    LoggingConfig,
     NoiseConfig,
     SensorConfig,
     TentativeLandmarkManagerConfig,
@@ -23,6 +24,7 @@ class SlamConfig:
     sensor: SensorConfig = field(default_factory=SensorConfig)
     tentative: TentativeLandmarkManagerConfig = field(default_factory=TentativeLandmarkManagerConfig)
     association: AssociationConfig = field(default_factory=AssociationConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @staticmethod
     def resolve_path(filename: str | Path) -> Path:

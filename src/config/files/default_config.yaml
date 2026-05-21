@@ -20,3 +20,7 @@ association:
   method: jcbb
   alpha_individual: 0.999
   alpha_joint: 0.9999
+logging:
+  log_association_diagnostics: true
+  association_stride: 200
+  association_steps: []

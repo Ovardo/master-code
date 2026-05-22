@@ -10,7 +10,7 @@ from association import get_associator
 from config import SlamConfig
 from data_loader import LidarStepInput, WheelOdometry
 from div.utils_gtsam import reorder_covariance_naive
-from logger import SlamLogger, AssociationDiagnostics
+from logger import SlamLogger, AssociationDiagnostics, StepDiagnostics
 from preprocessing import detect_trees, relative_pose
 from sensor import get_sensor_model
 from tentative import TentativeLandmark, get_tentative_landmark_manager
@@ -51,13 +51,12 @@ class FactorGraphSLAM:
     
         self.Q_input  = config.noise.control_input_cov_matrix
         self.Q_output = config.noise.odom_cov_matrix
-        self.R        = config.noise.range_bearing_cov_matrix
 
         # State tracking
         self._poses_keys = list()  # list of pose keys in the factor graph
         self._landmark_keys = list()  # list of landmark keys in the factor graph
         
-        self.step_metrics = dict()  # for logging and analysis
+        self.step_diagnostics = StepDiagnostics()  # for logging and analysis
 
         # Initialize with prior factor for initial pose
         self._add_prior_factor(initial_pose)
@@ -94,28 +93,30 @@ class FactorGraphSLAM:
         self._optimize()  
 
     def update(self, data: LidarStepInput):
+        # Clear diagnostic info from previous step
+        self.step_diagnostics.clear()
+
         _t0 = time.perf_counter()
-
-        self.step_metrics.clear() # clear diagnostic info from previous step
         
-        T_k = self._register_odometry(data.odometry)
-        self._register_scan(data.scan, T_k, data.scan_step, data.scan_time)
+        # Main SLAM update steps
+        T_pred = self._register_odometry(data.odometry)
+        self._register_scan(data.scan, T_pred, data.scan_step, data.scan_time)
 
-        self.step_metrics["scan_time"] = data.scan_time
-        self.step_metrics["scan_step"] = data.scan_step
-        self.step_metrics["n_landmarks"] = self.num_landmarks
-        self.step_metrics["t_update"] = time.perf_counter() - _t0
-
-        # self.logger.save_step(self.step_metrics)
+        # Diagnostics 
+        self.step_diagnostics.duration_update = time.perf_counter() - _t0
+        self.step_diagnostics.scan_time = data.scan_time
+        self.step_diagnostics.scan_step = data.scan_step
+        self.step_diagnostics.num_landmarks = self.num_landmarks
+        self.step_diagnostics.factor_graph_error = self.get_error() # consider commenting out this for faster runtime
+        self.step_diagnostics.num_factors = self.get_num_factors() # consider commenting out this for faster runtime
         
         if self.logger.should_save_snapshot(data.scan_step):
             self.logger.save_snapshot(
                 step=data.scan_step, 
                 snapshot=self.get_snapshot(), 
-                final=False
             )
         
-        return self.step_metrics.copy()
+        return self.step_diagnostics.copy()
     
     def _optimize(self) -> gtsam.ISAM2Result:
         _t0 = time.perf_counter()
@@ -125,7 +126,7 @@ class FactorGraphSLAM:
         self._new_values = gtsam.Values()
 
         _t1 = time.perf_counter()
-        self.step_metrics["t_optimize"] = self.step_metrics.get("t_optimize", 0.0) + (_t1 - _t0)
+        self.step_diagnostics.add_time("duration_optimization", _t1 - _t0)
 
         return result
 
@@ -165,7 +166,7 @@ class FactorGraphSLAM:
 
         self._optimize()
 
-        self.step_metrics["n_local_landmarks"] = len(local_lm_keys)
+        self.step_diagnostics.num_local_landmarks = len(local_lm_keys)
 
     def _preintegrate_odometry(self, wheel_odometry: list[WheelOdometry]) -> tuple[gtsam.Pose2, np.ndarray]:
         T_odom     = gtsam.Pose2.Identity()
@@ -236,7 +237,7 @@ class FactorGraphSLAM:
             z_pred,
             innovation_cov,
         )
-        self.step_metrics["t_association"] = time.perf_counter() - t0
+        self.step_diagnostics.duration_association = time.perf_counter() - t0
 
         if self.logger.should_save_association_diagnostics(scan_step):
             self.logger.save_association_diagnostics(
@@ -281,9 +282,8 @@ class FactorGraphSLAM:
 
         self._promote_tentative_landmarks(confirmed_tentatives)
 
-        
-        self.step_metrics["n_associated"] = int(np.sum(is_associated))
-        self.step_metrics["n_unassociated"] = int(np.sum(~is_associated))
+        self.step_diagnostics.num_associated_measurement = int(np.sum(is_associated))
+        self.step_diagnostics.num_unassociated_measurement = int(np.sum(~is_associated))
 
 
     def _get_local_landmarks(self, T_k: gtsam.Pose2) -> tuple[np.ndarray, list[int]]:
@@ -320,17 +320,12 @@ class FactorGraphSLAM:
         if len(query) <= 1:
             return np.zeros([3,3]) 
     
-        joint_covariance = self.isam2.jointMarginalCovariance(query)
-        if hasattr(joint_covariance, "fullMatrix"):
-            covariance = joint_covariance.fullMatrix()
-        else:
-            covariance = np.asarray(joint_covariance)
-        covariance = reorder_covariance_naive(covariance) 
+        covariance = self.isam2.jointMarginalCovariance(query)
+        covariance = reorder_covariance_naive(covariance.fullMatrix())
 
-        self.step_metrics["t_covariance_extraction"] = time.perf_counter() - _t0
+        self.step_diagnostics.duration_covariance_extraction = time.perf_counter() - _t0
         return covariance
     
-
     def _add_bearing_range_factors(
         self, 
         measurements: np.ndarray, 
@@ -405,6 +400,7 @@ class FactorGraphSLAM:
     def get_snapshot(self) -> dict[str, np.ndarray]:
         """Get snapshot of current state for logging."""
         return dict(
+            step=self.num_poses, # TODO: double check if one of error
             poses=self.get_poses(),
             poses_covariance=self.get_poses_covariance(),
             landmarks=self.get_landmarks(),

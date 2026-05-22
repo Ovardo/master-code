@@ -10,12 +10,12 @@ Saves to:
         snapshots/
             snap_00050.npz     ← full state at step 50
             snap_00100.npz     ← full state at step 100
-            snap_final.npz     ← final state (always written by save())
+            snap_xxxxx.npz     ← full final state (always written by save())
 """
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -55,9 +55,36 @@ class AssociationDiagnostics:
 @dataclass
 class StepDiagnostics:
     """Per-step diagnostics for logging and plotting."""
-    scan_step: int
-    scan_time: float
-    # TODO
+    scan_step: int = -1
+    scan_time: float = np.nan
+    factor_graph_error: float = np.nan
+    num_factors: float = np.nan
+    num_landmarks: int = 0
+    num_local_landmarks: int = 0
+    num_associated_measurement: int = 0
+    num_unassociated_measurement: int = 0
+    duration_update: float = 0.0
+    duration_optimization: float = 0.0
+    duration_association: float = 0.0
+    duration_covariance_extraction: float = 0.0
+
+    def clear(self) -> None:
+        """Reset all diagnostics to their default values."""
+        fresh = type(self)()
+        for field in fields(self):
+            setattr(self, field.name, getattr(fresh, field.name))
+
+    def copy(self) -> StepDiagnostics:
+        """Return a detached copy of these diagnostics."""
+        return replace(self)
+
+    def add_time(self, name: str, dt: float) -> None:
+        """Accumulate timing diagnostics by field name."""
+        setattr(self, name, getattr(self, name) + dt)
+
+    def as_dict(self) -> dict[str, float | int]:
+        """Return diagnostics as a plain dictionary."""
+        return {field.name: getattr(self, field.name) for field in fields(self)}
 
 
 class SlamLogger:
@@ -99,51 +126,52 @@ class SlamLogger:
             return True
         return scan_step % self.snapshot_stride == 0
 
-    def convert_records_to_steps(self, records: list[dict[str, object]]) -> dict[str, np.ndarray]:
-        """ Convert append-friendly per-step records to columnar step arrays. """
-        all_keys = {k for record in records for k in record}
-        steps = {
-            key: np.asarray([record.get(key, np.nan) for record in records])
-            for key in all_keys
+    def _convert(self, steps_list: list[StepDiagnostics]) -> dict[str, np.ndarray]:
+        """ Convert per-step diagnostics to columnar step arrays. """
+        steps_dict_arr = {
+            field.name: np.asarray([getattr(step, field.name) for step in steps_list])
+            for field in fields(StepDiagnostics)
         }
-        return steps
+        return steps_dict_arr
 
-
-    def save_steps(self, steps: dict[str, np.ndarray]) -> None:
+    def save_steps_diagnostics(self, steps: list[StepDiagnostics]) -> dict[str, np.ndarray]:
         """ Save per-step diagnostics to a compressed npz file. """
         path = self.run_dir / "steps.npz"
-        np.savez_compressed(path, **steps)
-        
+        steps_dict = self._convert(steps)
+        np.savez_compressed(path, **steps_dict)
+        return steps_dict
 
     def save_snapshot(self, step: int, snapshot: dict[str, np.ndarray], final: bool = False) -> None:
         """ Write a full-state snapshot to disk"""
         snapshot = dict(snapshot)
-        snapshot["step"] = np.array([step]) # Include step in snapshot for easier loading and debugging
+        snapshot["step"] = np.asarray([step], dtype=np.int64)
 
         if final:
             filename = "snap_final.npz"
         else:
             filename = f"snap_{step:05d}.npz"
+
         path = self.snapshot_dir / filename
         np.savez_compressed(path, **snapshot)
 
-
-    def save_association_diagnostics(
-        self,
-        diagnostics = AssociationDiagnostics
-    ) -> None:
+    def save_association_diagnostics(self, diagnostics: AssociationDiagnostics) -> None:
         """Save one scan's raw association data to a compressed npz file."""
         path = self.association_dir / f"assoc_{diagnostics.scan_step:05d}.npz"
         np.savez_compressed(path, **diagnostics.as_npz_dict())
     
-    def save_metadata(self, steps: dict[str, np.ndarray], snapshot: dict[str, np.ndarray], verbose: bool = True) -> None:
-                
+    def save_metadata(
+        self,
+        diagnostics: StepDiagnostics,
+        total_time: float,
+        verbose: bool = True,
+    ) -> None:
+    
         metadata = {
             "timestamp":     datetime.now().isoformat(timespec="seconds"),
-            "num_poses":     int(len(snapshot["poses"])),
-            "num_landmarks": int(len(snapshot["landmarks"])),
-            "fg_error":      steps["fg_error"][-1],
-            "total_time_s":  round(float(np.nansum(steps["t_update"])), 3),
+            "num_poses":     diagnostics.scan_step + 1,
+            "num_landmarks": diagnostics.num_landmarks,
+            "factor_graph_error": diagnostics.factor_graph_error,
+            "run_time_s":  total_time,
         }
         
         metadata_path = self.run_dir / "metadata.json"
@@ -157,8 +185,8 @@ class SlamLogger:
                         f"  Path        : {self.run_dir.resolve()}",
                         f"  Poses       : {metadata['num_poses']}",
                         f"  Landmarks   : {metadata['num_landmarks']}",
-                        f"  Final error : {metadata['fg_error']:.3f}",
-                        f"  Total time  : {metadata['total_time_s']:.1f}s",
+                        f"  Final error : {metadata['factor_graph_error']:.3f}",
+                        f"  Run time    : {metadata['run_time_s']:.2f}s",
                     ]
                 )
             )
@@ -166,63 +194,53 @@ class SlamLogger:
 
     def save(self, 
              step: int,
-             steps: dict[str, np.ndarray],
+             steps: list[StepDiagnostics],
              snapshot: dict[str, np.ndarray], 
              verbose=True) -> None:
-        
-        self.save_steps(steps)
+
+        steps_dict = self.save_steps_diagnostics(steps)
         self.save_snapshot(step, snapshot, final=True)
-        self.save_metadata(steps, snapshot, verbose=verbose)
+        self.save_metadata(steps_dict, snapshot, verbose=verbose)
 
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
+    def _load_npz_dict(path: Path | str) -> dict[str, np.ndarray]:
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(path)
+
+        with np.load(path, allow_pickle=False) as archive:
+            return {k: archive[k] for k in archive.files}
 
     @staticmethod
-    def load_steps(run_dir: Path | str) -> dict[str, np.ndarray]:
-        run_dir = Path(run_dir)
-        records_path = run_dir / "steps.npz"
-        if not records_path.exists():
-            raise FileNotFoundError(f"No steps.npz in {run_dir}")
-
-        archive = np.load(records_path, allow_pickle=False)
-        return {k: archive[k] for k in archive.files}
+    def load_steps(run_path: Path | str) -> dict[str, np.ndarray]:
+        return SlamLogger._load_npz_dict(Path(run_path) / "steps.npz")
 
     @staticmethod
     def load_snapshot(snapshot_path: Path | str) -> dict[str, np.ndarray]:
-        snapshot_path = Path(snapshot_path)
-        archive = np.load(snapshot_path, allow_pickle=False)
-        return {k: archive[k] for k in archive.files}
+        return SlamLogger._load_npz_dict(snapshot_path)
 
     @staticmethod
-    def load_association_diagnostics(path: Path | str) -> dict[str, np.ndarray]:
-        path = Path(path)
-        archive = np.load(path, allow_pickle=False)
-        return {k: archive[k] for k in archive.files}
+    def load_association_diagnostics(diagnostics_path: Path | str) -> dict[str, np.ndarray]:
+        return SlamLogger._load_npz_dict(diagnostics_path)
+
+    @staticmethod
+    def load_all_snapshots(run_dir: Path | str) -> list[dict[str, np.ndarray]]:
+        run_dir = Path(run_dir)
+        snap_dir = run_dir / "snapshots"
+        if not snap_dir.exists():
+            raise FileNotFoundError(snap_dir)
+
+        paths = sorted(snap_dir.glob("snap_*.npz"))
+        return [SlamLogger.load_snapshot(p) for p in paths]
 
     @staticmethod
     def load_all_association_diagnostics(run_dir: Path | str) -> list[dict[str, np.ndarray]]:
         run_dir = Path(run_dir)
-        association_dir = run_dir / "associations"
-        if not association_dir.exists():
-            return []
+        assoc_dir = run_dir / "associations"
+        if not assoc_dir.exists():
+            raise FileNotFoundError(assoc_dir)
 
-        paths = sorted(association_dir.glob("assoc_*.npz"))
+        paths = sorted(assoc_dir.glob("assoc_*.npz"))
         return [SlamLogger.load_association_diagnostics(path) for path in paths]
-
-    @staticmethod
-    def load_snapshots(run_dir: Path | str, include_final: bool = True) -> list[dict[str, np.ndarray]]:
-        run_dir = Path(run_dir)
-        snap_dir = run_dir / "snapshots"
-        if not snap_dir.exists():
-            return []
-
-        # Numbered periodic snapshots, sorted ascending
-        paths = sorted(snap_dir.glob("snap_[0-9]*.npz"))
-
-        # Final snapshot appended last (not glob'd to preserve ordering)
-        final_path = snap_dir / "snap_final.npz"
-        if include_final and final_path.exists():
-            paths.append(final_path)
-
-        return [SlamLogger.load_snapshot(p) for p in paths]

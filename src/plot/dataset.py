@@ -59,23 +59,29 @@ def plot_sensor_timing(lidar, odometry, gnss, window_seconds=2):
     plt.tight_layout()
 
 
-def plot_raw_gps(gnss, t0=None):
+def plot_raw_gps(gnss, t0=None, lidar_scans_times=None):
     """
     Plot raw gnss position measurements.
 
     ``gnss`` is expected to have columns [timestamp, x, y], where x/y are in
     meters and timestamp is in seconds.
     """
+
+
     if t0 is None:
         t0 = gnss[0, 0]
 
     gps_times = gnss[:, 0] - t0
 
+    # Find closest lidar scan indices to each GPS time
+    lidar_times = lidar_scans_times - t0
+    closest_scan_step = np.argmin(np.abs(lidar_times[:, np.newaxis] - gps_times[np.newaxis, :]), axis=0)
+
     gps_fig, gps_axis = plt.subplots(figsize=(8, 8), constrained_layout=True)
     gps_points = gps_axis.scatter(
         gnss[:, 1],
         gnss[:, 2],
-        c=gps_times,
+        c=closest_scan_step,
         cmap="turbo",
         s=10,
         linewidths=0,
@@ -84,8 +90,8 @@ def plot_raw_gps(gnss, t0=None):
     gps_axis.scatter(
         gnss[0, 1],
         gnss[0, 2],
-        color="tab:green",
-        marker="x",
+        color="tab:blue",
+        marker="o",
         s=70,
         linewidths=1.6,
         label="First gnss",
@@ -94,7 +100,7 @@ def plot_raw_gps(gnss, t0=None):
         gnss[-1, 1],
         gnss[-1, 2],
         color="tab:red",
-        marker="x",
+        marker="o",
         s=70,
         linewidths=1.6,
         label="Last gnss",
@@ -582,16 +588,16 @@ def main():
 
     fig = plot_raw_odometry(odometry)
     fig.set_size_inches(11.0, 4.0)  # width, height in inches
-    fig.savefig("src/plotting/figures/odometry.pdf", bbox_inches="tight")
+    fig.savefig("src/plot/figures/odometry.pdf", bbox_inches="tight")
 
-    fig = plot_raw_gps(gnss)
+    fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
     fig.set_size_inches(6.0, 5.5)  # width, height in inches
-    fig.savefig("src/plotting/figures/gnss.pdf", bbox_inches="tight")
+    fig.savefig("src/plot/figures/gnss.pdf", bbox_inches="tight")
 
     
     fig = plot_lidar_tree_detection_summary(lidar)
     fig.set_size_inches(11.0, 5.5)  # width, height in inches
-    fig.savefig("src/plotting/figures/lidar.pdf", bbox_inches="tight")
+    fig.savefig("src/plot/figures/lidar.pdf", bbox_inches="tight")
 
     plt.show()
 

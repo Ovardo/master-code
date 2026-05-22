@@ -3,19 +3,20 @@ from datetime import datetime
 from pathlib import Path
 
 from tqdm import tqdm
+import time
 
 from config import SlamConfig
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
-from plotting import save_run_figures
+from plotting import SlamRunPlotter
 from slam import FactorGraphSLAM
 
 
 def main() -> None:
     
-    output_dir = Path("runs") / datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    output_dir = Path("runs") / datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    config_name = "vp1_diverging.yaml"
+    config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)
     logger = SlamLogger(output_dir, config.logging)
     config.save(output_dir / "config.yaml")
@@ -31,41 +32,26 @@ def main() -> None:
     )
 
     # Num lidar scan steps
-    K = 1000 # max is 7248
+    K = 7300 # max is 7248
 
-    records = []
+    steps_diagnostics_list = []
 
     # Main loop
+    t0 = time.perf_counter()
     for k, meas in tqdm(enumerate(loader.iterate(K)), total=min(K, 7248), desc="SLAM"):
-        
-        record = slam.update(meas)
- 
-        if k % 200 == 0 and k > 0:
-            
-            record['fg_error'] = slam.get_error()
-            record['n_factors'] = slam.get_num_factors()
 
-        records.append(record)
+        diagnostics = slam.update(meas)
+        steps_diagnostics_list.append(diagnostics)
 
+    total_time = time.perf_counter() - t0
 
-    snapshot = slam.get_snapshot()
-    logger.save_snapshot(k, snapshot, final=True)
-    records[-1]['fg_error'] = slam.get_error()
-    records[-1]['n_factors'] = slam.get_num_factors()
-    
-    steps = logger.convert_records_to_steps(records)
-    logger.save_steps(steps)
-    logger.save_metadata(steps, snapshot)
+    logger.save_snapshot(k, slam.get_snapshot(), final=True)
+    logger.save_steps_diagnostics(steps_diagnostics_list)
+    logger.save_metadata(steps_diagnostics_list[-1], total_time)
 
     # Produce + save figures.
-    save_run_figures(
-        run_dir=output_dir,
-        steps=steps,
-        snapshot=snapshot,
-        gnss=loader.gnss,
-        fmt="pdf",
-        show=True,
-    )
+    plotter = SlamRunPlotter.from_run(output_dir)
+    plotter.plot_all(save=True, show=True)
 
 
 if __name__ == "__main__":

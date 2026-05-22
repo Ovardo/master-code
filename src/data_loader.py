@@ -160,6 +160,9 @@ class VictoriaParkLoader:
         return np.column_stack(
             [self.gnss_timestamps, self.gnss_longitude, self.gnss_latitude]
         )
+    @property
+    def gnss_filtered(self) -> np.ndarray:
+        return np.delete(self.gnss, 3501, axis=0)
 
     @property 
     def initial_pose(self) -> np.ndarray:

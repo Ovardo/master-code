@@ -21,9 +21,9 @@ association:
   alpha_individual: 0.9999
   alpha_joint: 0.99999
 logging:
-  log_association_diagnostics: true
+  log_association_diagnostics: True
   association_stride: 1
   association_steps: []
-  log_snapshot: false
-  snapshot_stride: 10000
-  snapshot_steps: [0, 100, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000]
+  log_snapshot: True
+  snapshot_stride: 1
+  snapshot_steps: []

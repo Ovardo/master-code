@@ -16,7 +16,7 @@ from config import SlamConfig
 from data_loader import VictoriaParkLoader
 from preprocessing import relative_pose
 
-matplotlib.use('qtagg')
+# matplotlib.use('qtagg')
 
 
 def covariance_ellipse_params(
@@ -94,7 +94,7 @@ def animate_covariance(
     max_radius = max(max(width, height) for _, width, height, _ in ellipse_params) / 2
     margin = max(10.0, max_radius * 1.1)
 
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig, ax = plt.subplots(figsize=(4.13, 4.13))
     (path_line,) = ax.plot([], [], color="tab:blue", linewidth=1.8, label="Dead reckoning")
     (current_pose,) = ax.plot([], [], marker="o", color="tab:blue", markersize=4)
     ellipse = Ellipse(
@@ -157,7 +157,7 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 8))
     
     ax.plot([p.x() for p in poses], [p.y() for p in poses], label="Dead reckoning path", color="tab:blue", linewidth=1.8)
-    ax.scatter(gnss[:, 1], gnss[:, 2], marker='.', s=18, c="tab:orange", label="gnss measurements")
+    ax.scatter(gnss[:, 1], gnss[:, 2], marker='.', s=18, c="gold", label="gnss measurements")
 
     ax.legend(loc="lower right")
 
@@ -174,6 +174,7 @@ def main():
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.legend()
+    plt.savefig("src/plot/figures/dead_reckoning.pdf", bbox_inches="tight")
     plt.show()
 
 

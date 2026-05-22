@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -9,9 +10,9 @@ from matplotlib.patches import Ellipse
 from scipy.stats import chi2
 
 from association import NIS, individualCompatibility
+from config import SlamConfig
 from data_loader import VictoriaParkLoader
 from logger import SlamLogger
-from config import SlamConfig
 from utils import rotmat2
 
 
@@ -109,8 +110,9 @@ def plot_timing_breakdown(
 
     fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
 
-    axes[0].stackplot(steps, *parts, labels=labels)
-    axes[0].set_ylabel("Time (s)")
+    parts_ms = [1000*p for p in parts]
+    axes[0].stackplot(steps, *parts_ms, labels=labels)
+    axes[0].set_ylabel("Time (ms)")
     axes[0].set_title("Per-step Processing Time Breakdown")
     axes[0].legend(loc="upper left", fontsize=8)
     axes[0].grid(True, lw=0.4)
@@ -127,17 +129,17 @@ def plot_timing_breakdown(
 
 def plot_timing_over_time(
     steps: np.ndarray,
-    t_total: np.ndarray,
+    t_cov: np.ndarray,
     n_local: np.ndarray
 ) -> plt.Figure:
-    """Plot total step time and in-view predicted landmark count."""
+    """Plot covariance recovery step time and in-view predicted landmark count."""
    
     fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
 
-    axes[0].plot(steps, t_total, lw=0.8, color="steelblue")
+    axes[0].plot(steps, t_cov, lw=0.8, color="steelblue")
     axes[0].set_ylabel("Time (s)")
     axes[0].set_yscale("log")
-    axes[0].set_title("SLAM Step Processing Time")
+    axes[0].set_title("Covariance Recovery Step Processing Time")
     axes[0].grid(True, which="both", lw=0.4)
 
     axes[1].plot(steps, n_local, lw=0.8, color="tomato")
@@ -151,15 +153,15 @@ def plot_timing_over_time(
 
 def plot_timing_vs_landmarks(
     n_local: np.ndarray,
-    t_total: np.ndarray,
+    t_cov: np.ndarray,
 ) -> plt.Figure:
-    """Plot total step time against in-view landmark count."""
+    """Plot covariance recovery step time against in-view landmark count."""
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.scatter(n_local, t_total, alpha=0.4, s=12, color="steelblue")
+    ax.scatter(n_local, t_cov, alpha=0.4, s=12, color="steelblue")
     ax.set_xlabel("In-view landmark count")
-    ax.set_ylabel("Step processing time (s)")
-    ax.set_title("Processing Time vs. In-view Landmarks")
+    ax.set_ylabel("Covariance recovery time (s)")
+    ax.set_title("Covariance Recovery Time vs. In-view Landmarks")
     ax.grid(True, lw=0.4)
     fig.tight_layout()
     return fig
@@ -311,11 +313,11 @@ def compute_association_statistics(
     alpha_joint: float = 0.9999,
 ) -> dict[str, float | int | np.ndarray]:
     """Compute derived association statistics from raw saved association data."""
-    measurements = np.asarray(diagnostics["measurements"], dtype=float).reshape(-1, 2)
-    predicted = np.asarray(diagnostics["predicted_measurements"], dtype=float).reshape(-1, 2)
-    association = np.asarray(diagnostics["association"], dtype=int).reshape(-1)
-    innovation_cov = np.asarray(diagnostics["innovation_covariance"], dtype=float)
-
+    measurements   = diagnostics.get("measurements")
+    predicted      = diagnostics.get("predicted_measurements")
+    association    = diagnostics.get("association")
+    innovation_cov = diagnostics.get("innovation_covariance")
+    
     n_associated = int(np.sum(association >= 0))
     dof = 2 * n_associated
 
@@ -329,11 +331,11 @@ def compute_association_statistics(
         joint_lower = np.nan
         joint_per_dof = np.nan
     else:
-        joint_nis = float(NIS(measurements, predicted, innovation_cov, association))
+        joint_nis      = float(NIS(measurements, predicted, innovation_cov, association))
         joint_expected = float(dof)
-        joint_upper = float(chi2.isf(1 - alpha_joint, dof))
-        joint_lower = float(chi2.isf(alpha_joint, dof))
-        joint_per_dof = joint_nis / dof
+        joint_upper    = float(chi2.isf(1 - alpha_joint, dof))
+        joint_lower    = float(chi2.isf(alpha_joint, dof))
+        joint_per_dof  = joint_nis / dof
 
     return {
         "individual_compatibility": individual_compatibility,
@@ -347,7 +349,7 @@ def compute_association_statistics(
     }
 
 
-def plot_association_diagnostics(
+def plot_association(
     diagnostics: dict[str, np.ndarray],
     show_covariances: bool = True,
     alpha_individual: float = 0.999,
@@ -355,12 +357,14 @@ def plot_association_diagnostics(
 ) -> plt.Figure:
     """Plot one saved association diagnostic in world space and innovation space."""
     scan_step = int(diagnostics["scan_step"][0])
-    pose = np.asarray(diagnostics["pose"], dtype=float).reshape(3)
-    measurements = np.asarray(diagnostics["measurements"], dtype=float).reshape(-1, 2)
-    predicted = np.asarray(diagnostics["predicted_measurements"], dtype=float).reshape(-1, 2)
-    association = np.asarray(diagnostics["association"], dtype=int).reshape(-1)
-    local_landmarks = np.asarray(diagnostics["local_landmarks"], dtype=float).reshape(-1, 2)
-    innovation_cov = np.asarray(diagnostics["innovation_covariance"], dtype=float)
+    
+    pose            = diagnostics.get("pose")
+    measurements    = diagnostics.get("measurements")
+    predicted       = diagnostics.get("predicted_measurements")
+    association     = diagnostics.get("association")
+    local_landmarks = diagnostics.get("local_landmarks")
+    innovation_cov  = diagnostics.get("innovation_covariance")
+    
     stats = compute_association_statistics(
         diagnostics,
         alpha_individual=alpha_individual,
@@ -537,28 +541,27 @@ def plot_association_nis(
 
     if np.any(valid):   
         axes[0].plot(scan_steps[valid], joint_nis[valid], lw=1.2, color="steelblue", label="NIS")
-        axes[0].plot(scan_steps[valid], expected[valid], lw=0.6, color="tomato", label="E[NIS] = dof")
-        axes[0].plot(scan_steps[valid], upper[valid], lw=0.6, color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$ (upper bound)")
-        axes[0].plot(scan_steps[valid], lower[valid], lw=0.8, color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$") 
+        axes[0].plot(scan_steps[valid], expected[valid], lw=1.0, ls=":", color="tomato", label="E[NIS] = dof")
+        axes[0].plot(scan_steps[valid], upper[valid], lw=1.0, ls=":", color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$")
+        axes[0].plot(scan_steps[valid], lower[valid], lw=1.0, ls=":", color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$")
 
-
-        axes[1].plot(scan_steps[valid], joint_nis[valid] / dof[valid], lw=1.1, color="steelblue", label="NIS / dof")
-        axes[1].axhline(1.0, lw=0.9, ls=":", color="tomato", label="E[NIS / dof] = 1")
-        axes[1].plot(scan_steps[valid], upper[valid] / dof[valid], lw=0.9, ls="--", color="green", label=r"$\chi^2_{{1},\alpha_{joint}}$ (upper bound)")
-        axes[1].plot(scan_steps[valid], lower[valid] / dof[valid], lw=0.9, ls="--", color="orange", label=r"$\chi^2_{{1},1-\alpha_{joint}}$") 
+        axes[1].plot(scan_steps[valid], joint_nis[valid] / dof[valid], lw=1.2, color="steelblue", label="NIS / dof")
+        axes[1].axhline(1.0, lw=1.0, ls=":", color="tomato", label="E[NIS / dof] = 1")
+        axes[1].plot(scan_steps[valid], upper[valid] / dof[valid], lw=1.0, ls=":", color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$ / dof")
+        axes[1].plot(scan_steps[valid], lower[valid] / dof[valid], lw=1.0, ls=":", color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$ / dof")
     else:
         axes[0].text(0.5, 0.5, "No associated measurements in saved diagnostics", ha="center", va="center")
         axes[1].text(0.5, 0.5, "No normalized NIS values", ha="center", va="center")
 
     axes[0].set_ylabel("NIS")
-    axes[0].set_title("Association Joint NIS")
+    axes[0].set_title("Joint NIS")
     if np.any(valid):
         axes[0].legend(loc="upper left", fontsize=8)
     axes[0].grid(True, lw=0.4)
 
     axes[1].set_xlabel("Scan step")
     axes[1].set_ylabel("NIS / DOF")
-    axes[1].set_title("Association NIS per Degree of Freedom")
+    axes[1].set_title("Joint NIS per Degree of Freedom")
     if np.any(valid):
         axes[1].legend(loc="upper left", fontsize=8)
     axes[1].grid(True, lw=0.4)
@@ -567,92 +570,145 @@ def plot_association_nis(
     return fig
 
 
-# class SlamPlotter:
-#     """Utility class for plotting SLAM runs from saved logs and snapshots."""
-#     def __init__(self, run_dir: Path | str):
-#         self.run_dir  = Path(run_dir)
-#         self.steps     = SlamLogger.load_steps(self.run_dir)
-#         self.estimates = SlamLogger.load_snapshot(self.run_dir / "snapshots" / "snap_final.npz")
-#         self.association_diagnostics = SlamLogger.load_all_association_diagnostics(self.run_dir)
+@dataclass
+class SlamRunPlotter:
+    """Utility class for plotting SLAM runs from saved logs and snapshots."""
+    run_dir: Path
+    steps: dict[str, np.ndarray]
+    snapshots: list[dict[str, np.ndarray]]
+    association: list[dict[str, np.ndarray]]
+    config: SlamConfig
     
-
-def save_run_figures(
-    run_dir: Path | str,
-    steps: dict[str, np.ndarray],
-    snapshot: dict[str, np.ndarray],
-    gnss: np.ndarray | None = None,
-    fmt: str = "pdf",
-    show: bool = False,
-) -> list[Path]:
-    out_dir = Path(run_dir) / "figures"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    cfg = SlamConfig.load(run_dir / "config.yaml")
-    scan_steps = steps["scan_step"]
-
-    figures = {
-        "estimate": plot_estimate(
-            poses=snapshot.get("poses"),
-            poses_cov=snapshot.get("poses_covariance"),
-            landmarks=snapshot.get("landmarks"),
-            landmarks_cov=snapshot.get("landmarks_covariance"),
-            gnss=gnss,
-        ),
-        "timing_breakdown": plot_timing_breakdown(
-            steps=scan_steps,
-            t_cov=steps["t_covariance_extraction"],
-            t_assoc=steps["t_association"],
-            t_opt=steps["t_optimize"],
-            t_total=steps["t_update"],
-        ),
-        "timing_over_time": plot_timing_over_time(
-            steps=scan_steps,
-            t_total=steps["t_update"],
-            n_local=steps["n_local_landmarks"],
-        ),
-        "timing_vs_landmarks": plot_timing_vs_landmarks(
-            n_local=steps["n_local_landmarks"],
-            t_total=steps["t_update"],
-        ),
-        "landmark_growth": plot_landmark_growth(
-            steps=scan_steps,
-            n_landmarks=steps["n_landmarks"],
-        ),
-        "error_over_time": plot_error(
-            steps=scan_steps,
-            error=steps["fg_error"],
-            n_factors=steps["n_factors"],
-        ),
-    }
-
-    if gnss is not None:
-        figures["gnss_pose_error"] = plot_gnss_pose_error(
-            gnss=gnss,
-            poses=snapshot.get("poses"),
-            pose_times=steps["scan_time"],
+    @classmethod
+    def from_run(cls, run_dir: Path | str) -> SlamRunPlotter:
+        steps       = SlamLogger.load_steps(run_dir)
+        snapshots   = SlamLogger.load_all_snapshots(run_dir)
+        association = SlamLogger.load_all_association_diagnostics(run_dir)
+        config      = SlamConfig.load(run_dir / "config.yaml")
+        
+        return cls(
+            run_dir=run_dir,
+            steps=steps,
+            snapshots=snapshots,
+            association=association,
+            config=config
         )
-
-    association_diagnostics = SlamLogger.load_all_association_diagnostics(run_dir)
-    if association_diagnostics:
-        figures["association_nis"] = plot_association_nis(
-            association_diagnostics,
-            alpha_individual=cfg.association.alpha_individual,
-            alpha_joint=cfg.association.alpha_joint,
-        )
-
-    paths = []
-    for name, fig in figures.items():
-        path = out_dir / f"{name}.{fmt}"
-        fig.savefig(path, dpi=300, bbox_inches="tight")
-        paths.append(path)
-
-    if show:
-        plt.show()
-    else:
-        for fig in figures.values():
+    
+    @property
+    def figure_dir(self) -> Path:
+        path = self.run_dir / "figures"
+        path.mkdir(exist_ok=True)
+        return path
+    
+    def _finish_figure(self, fig, name: str, save: bool, show: bool = True, fmt: str = "pdf") -> None:
+        fig.tight_layout()
+        if save:
+            path = self.figure_dir / f"{name}.{fmt}"
+            fig.savefig(path, dpi=200, bbox_inches="tight")
+        if not show:
             plt.close(fig)
 
-    return paths
+    
+    def plot_final_snapshot(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_estimate(
+            poses         = self.snapshots[-1].get("poses"),
+            poses_cov     = self.snapshots[-1].get("poses_covariance"),
+            landmarks     = self.snapshots[-1].get("landmarks"),
+            landmarks_cov = self.snapshots[-1].get("landmarks_covariance"), 
+            gnss = VictoriaParkLoader().gnss_filtered,
+            poses_cov_stride = 20
+        )
+        self._finish_figure(fig, "estimate", save, fmt)
+    
+    def plot_timing_breakdown(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_timing_breakdown(
+            steps   = self.steps.get("scan_step"),
+            t_cov   = self.steps.get("duration_covariance_extraction"),
+            t_assoc = self.steps.get("duration_association"),
+            t_opt   = self.steps.get("duration_optimization"),
+            t_total = self.steps.get("duration_update"),
+        )
+        self._finish_figure(fig, "timing_breakdown", save, fmt)
+    
+    def plot_timing_over_time(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_timing_over_time(
+            steps   = self.steps.get("scan_step"),
+            t_cov   = self.steps.get("duration_covariance_extraction") + self.steps.get("duration_association") + self.steps.get("duration_optimization"),
+            n_local = self.steps.get("num_local_landmarks"),
+        )
+        self._finish_figure(fig, "timing_over_time", save, fmt)
+    
+    def plot_timing_vs_landmarks(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_timing_vs_landmarks(
+            n_local = self.steps.get("num_local_landmarks"),
+            t_cov = self.steps.get("duration_covariance_extraction") + self.steps.get("duration_association") + self.steps.get("duration_optimization"),
+        )
+        self._finish_figure(fig, "timing_vs_landmarks", save, fmt)
+    
+    def plot_landmark_growth(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_landmark_growth(
+            steps       = self.steps.get("scan_step"),
+            n_landmarks = self.steps.get("num_landmarks"),
+        )
+        self._finish_figure(fig, "landmark_growth", save, fmt)
+    
+    def plot_error_over_time(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_error(
+            steps     = self.steps.get("scan_step"),
+            error     = self.steps.get("factor_graph_error"),
+            n_factors = self.steps.get("num_factors"),
+        )
+        self._finish_figure(fig, "error_over_time", save, fmt)
+    
+    def plot_gnss_pose_error(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_gnss_pose_error(
+            gnss=VictoriaParkLoader().gnss_filtered,
+            poses=self.snapshots[-1].get("poses"),
+            pose_times=self.steps.get("scan_time"),
+        )
+        self._finish_figure(fig, "gnss_pose_error", save, fmt)
+    
+    def plot_association_nis(self, save: bool = True, fmt: str = "pdf") -> None:
+        if not self.association:
+            print("No association diagnostics found, skipping NIS plot.")
+            return
+        
+        fig = plot_association_nis(
+            diagnostics=self.association,
+            alpha_individual=self.config.association.alpha_individual,
+            alpha_joint=self.config.association.alpha_joint,
+        )
+        self._finish_figure(fig, "association_nis", save, fmt)
+    
+    def plot_association(self, save: bool = True, fmt: str = "pdf") -> None:
+        if not self.association:
+            print("No association diagnostics found, skipping association plot.")
+            return
+        
+        for diag in self.association:
+            scan_step = int(diag["scan_step"][0])
+            fig = plot_association(
+                diagnostics=diag,
+                show_covariances=True,
+                alpha_individual=self.config.association.alpha_individual,
+                alpha_joint=self.config.association.alpha_joint,
+            )
+            self._finish_figure(fig, f"association_scan_{scan_step:03d}", save, show=False)
+
+    
+    def plot_all(self, save: bool = True, show: bool = True):
+        self.plot_final_snapshot(save=save)
+        self.plot_timing_breakdown(save=save)
+        self.plot_timing_over_time(save=save)
+        self.plot_timing_vs_landmarks(save=save)
+        self.plot_landmark_growth(save=save)
+        self.plot_error_over_time(save=save)  
+        self.plot_gnss_pose_error(save=save)
+        self.plot_association_nis(save=save) 
+        # self.plot_association(save=False)
+        plt.show()
+
+
 
 
 def main() -> None:
@@ -666,25 +722,13 @@ def main() -> None:
     args = parser.parse_args()
 
     run_dir = args.run_dir
-    steps = SlamLogger.load_steps(run_dir)
-    snapshot = SlamLogger.load_snapshot(run_dir / "snapshots" / "snap_final.npz")
-    gnss = VictoriaParkLoader().gnss if args.gnss else None
+    plotter = SlamRunPlotter.from_run(run_dir)
+    plotter.plot_all(save=True, show=args.show)
     
-    save_run_figures(
-        run_dir=run_dir,
-        steps=steps,
-        snapshot=snapshot,
-        gnss=gnss,
-        fmt=args.fmt,
-        show=args.show,
-        association_alpha_individual=args.alpha_individual,
-        association_alpha_joint=args.alpha_joint,
-    )
-
 
 if __name__ == "__main__":
-    diag = SlamLogger.load_association_diagnostics("/Users/ovar/Documents/Master/master_code/runs/run_20260521_015933/associations/assoc_00999.npz")
-    fig = plot_association_diagnostics(diag)
-    plt.show()
+    plotter = SlamRunPlotter.from_run(Path('runs/20260521_203732_all'))
+    plotter.plot_all(save=False, show=True)
+
     # main()
     

@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 
 from master_code.paths import FIGURES_ROOT
 
-TEXT_WIDTH = 6
+TEXT_WIDTH = 8
 SMALL_WIDTH = 0.75 * TEXT_WIDTH
 HALF_WIDTH = 0.5 * TEXT_WIDTH
 

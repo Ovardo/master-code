@@ -107,8 +107,8 @@ class FactorGraphSLAM:
         self.step_diagnostics.scan_time = data.scan_time
         self.step_diagnostics.scan_step = data.scan_step
         self.step_diagnostics.num_landmarks = self.num_landmarks
-        self.step_diagnostics.factor_graph_error = self.get_error() # consider commenting out this for faster runtime
-        self.step_diagnostics.num_factors = self.get_num_factors() # consider commenting out this for faster runtime
+        # self.step_diagnostics.factor_graph_error = self.get_error() # consider commenting out this for faster runtime
+        # self.step_diagnostics.num_factors = self.get_num_factors() # consider commenting out this for faster runtime
         
         if self.logger.should_save_snapshot(data.scan_step):
             self.logger.save_snapshot(
@@ -144,9 +144,13 @@ class FactorGraphSLAM:
         scan_step: int,
         scan_time: float,
     ) -> None:
+        t0 = time.perf_counter()
         z = self._detect_measurements(scan)
+        self.step_diagnostics.duration_scan_processing = time.perf_counter() - t0
 
+        t0 = time.perf_counter()
         local_lm, local_lm_keys = self._get_local_landmarks(T_k)
+        self.step_diagnostics.duration_local_landmark_extraction = time.perf_counter() - t0
 
         association = self._associate_measurements(
             z=z,
@@ -226,8 +230,10 @@ class FactorGraphSLAM:
 
         query = [self._poses_keys[-1]] + local_lm_keys
         query_cov = self._extract_joint_covariance(query)
-
+        
+        t0 = time.perf_counter()
         innovation_cov = self.sensor.innovation_covariance(T_k, local_lm, query_cov)
+        self.step_diagnostics.duration_innovation_covariance = time.perf_counter() - t0
 
         z_pred = self.sensor.h(T_k, local_lm)
 
@@ -274,6 +280,7 @@ class FactorGraphSLAM:
 
         lm_unassociated = self.sensor.h_inverse(T_k, z_unassociated)
 
+        self.t0 = time.perf_counter()
         confirmed_tentatives = self.tentative.process_unassociated_measurements(
             current_step=self.num_poses,
             unassociated_measurements=z_unassociated,
@@ -281,6 +288,7 @@ class FactorGraphSLAM:
         )
 
         self._promote_tentative_landmarks(confirmed_tentatives)
+        self.step_diagnostics.duration_tentative_processing = time.perf_counter() - self.t0
 
         self.step_diagnostics.num_associated_measurement = int(np.sum(is_associated))
         self.step_diagnostics.num_unassociated_measurement = int(np.sum(~is_associated))

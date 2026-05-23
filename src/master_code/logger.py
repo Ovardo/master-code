@@ -54,7 +54,7 @@ class AssociationDiagnostics:
 
 @dataclass
 class StepDiagnostics:
-    """Per-step diagnostics for logging and plotting."""
+    """Per-step scalar diagnostics for logging and plotting."""
     scan_step: int = -1
     scan_time: float = np.nan
     factor_graph_error: float = np.nan
@@ -67,6 +67,10 @@ class StepDiagnostics:
     duration_optimization: float = 0.0
     duration_association: float = 0.0
     duration_covariance_extraction: float = 0.0
+    duration_tentative_processing: float = 0.0
+    duration_local_landmark_extraction: float = 0.0
+    duration_innovation_covariance: float = 0.0
+    duration_scan_processing: float = 0.0
 
     def clear(self) -> None:
         """Reset all diagnostics to their default values."""
@@ -205,13 +209,23 @@ class SlamLogger:
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
+    # @staticmethod
+    # def _load_npz_dict(path: Path | str) -> dict[str, np.ndarray]:
+    #     path = Path(path)
+    #     if not path.exists():
+    #         raise FileNotFoundError(path)
+    #     # Could consider doing lazy loading, returning np.load() instead of dict
+    #     with np.load(path, allow_pickle=False) as archive:
+    #         return {k: archive[k] for k in archive.files}
+    
+    @staticmethod
     def _load_npz_dict(path: Path | str) -> dict[str, np.ndarray]:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(path)
         # Could consider doing lazy loading, returning np.load() instead of dict
-        with np.load(path, allow_pickle=False) as archive:
-            return {k: archive[k] for k in archive.files}
+        return np.load(path, allow_pickle=False)
+     
 
     @staticmethod
     def load_steps(run_path: Path | str) -> dict[str, np.ndarray]:

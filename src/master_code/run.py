@@ -5,16 +5,17 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 
-from config import SlamConfig
-from data_loader import VictoriaParkLoader
-from logger import SlamLogger
-from plotting import SlamRunPlotter
-from slam import FactorGraphSLAM
+from master_code.config import SlamConfig
+from master_code.data_loader import VictoriaParkLoader
+from master_code.logger import SlamLogger
+from master_code.plotter import SlamRunPlotter
+from master_code.slam import FactorGraphSLAM
+from master_code.paths import RUNS_ROOT
 
 
 def main() -> None:
     
-    output_dir = Path("runs") / datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d_%H%M%S")
 
     config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from config.config import (
+from master_code.config.config import (
     AssociationConfig,
     LoggingConfig,
     NoiseConfig,

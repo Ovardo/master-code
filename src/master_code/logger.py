@@ -10,7 +10,7 @@ Saves to:
         snapshots/
             snap_00050.npz     ← full state at step 50
             snap_00100.npz     ← full state at step 100
-            snap_xxxxx.npz     ← full final state (always written by save())
+            snap_final.npz     ← full final state (always written by save())
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from config import LoggingConfig
+from master_code.config import LoggingConfig
 
 
 @dataclass
@@ -209,7 +209,7 @@ class SlamLogger:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(path)
-
+        # Could consider doing lazy loading, returning np.load() instead of dict
         with np.load(path, allow_pickle=False) as archive:
             return {k: archive[k] for k in archive.files}
 
@@ -226,7 +226,7 @@ class SlamLogger:
         return SlamLogger._load_npz_dict(diagnostics_path)
 
     @staticmethod
-    def load_all_snapshots(run_dir: Path | str) -> list[dict[str, np.ndarray]]:
+    def load_all_snapshots(run_dir: Path | str) -> list[dict[str, np.ndarray]]:  
         run_dir = Path(run_dir)
         snap_dir = run_dir / "snapshots"
         if not snap_dir.exists():

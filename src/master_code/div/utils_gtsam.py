@@ -6,7 +6,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 import gtsam
 import numpy as np
 
-from utils import symmetrize
+from master_code.utils import symmetrize
 
 # -------------------------------
 # Core utilities

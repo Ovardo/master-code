@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from config import SlamConfig
+from master_code.config import SlamConfig
 
 
 @dataclass

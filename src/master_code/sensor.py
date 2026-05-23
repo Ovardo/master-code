@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from config import SlamConfig
-from utils import cartesian2polar, make_psd, rotmat2, ssa
+from master_code.config import SlamConfig
+from master_code.utils import cartesian2polar, make_psd, rotmat2, ssa
 
 import gtsam
 

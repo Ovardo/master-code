@@ -1,23 +1,19 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Rectangle
 from matplotlib.widgets import CheckButtons
 
-sys.path.append(str(Path(__file__).parents[1]))
 
-from data_loader import VictoriaParkLoader
-from preprocessing import detect_trees
+from master_code.data_loader import VictoriaParkLoader, find_gnss_outliers
+from master_code.preprocessing import detect_trees
+from master_code.paths import FIGURES_ROOT
 
 RANGE_CMAP = "viridis_r"
 LIDAR_INFINITY_RANGE = 80.0
 CARTESIAN_PLOT_RANGE = 85.0
 CROP_BOX_COLOR = "#f59e0b"
 SCAN_LINE_COLOR = "#22d3ee"
-
 
 def plot_sensor_timing(lidar, odometry, gnss, window_seconds=2):
     T_lsr = lidar[:, 0]
@@ -85,7 +81,7 @@ def plot_raw_gps(gnss, t0=None, lidar_scans_times=None):
         cmap="turbo",
         s=10,
         linewidths=0,
-        label="gnss fixes",
+        label=r"$z_{\text{gnss}}$",
     )
     gps_axis.scatter(
         gnss[0, 1],
@@ -94,16 +90,16 @@ def plot_raw_gps(gnss, t0=None, lidar_scans_times=None):
         marker="o",
         s=70,
         linewidths=1.6,
-        label="First gnss",
+        label=r"$z_{\text{gnss}, 1}$",
     )
     gps_axis.scatter(
         gnss[-1, 1],
         gnss[-1, 2],
         color="tab:red",
-        marker="o",
+        marker="s",
         s=70,
         linewidths=1.6,
-        label="Last gnss",
+        label=r"$z_{\text{gnss}, N}$",
     )
     gps_axis.set_title("Raw gnss positions")
     gps_axis.set_xlabel("Easting (m)")
@@ -575,6 +571,27 @@ def plot_lidar_tree_detection_summary(
     fig.colorbar(lidar_image, ax=[overview_axis, crop_axis], label=_range_colorbar_label(range_limit))
     return fig
 
+def plot_gnss(gnss):
+    
+    fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(10, 4), constrained_layout=True)
+    
+    gnss_norm = np.linalg.norm(gnss[:, 1:3], axis=1)
+
+    outliers_idx = find_gnss_outliers(gnss)
+    print(f"GNSS outlier indices: {outliers_idx.tolist()}")
+
+    # plot consecutive GNSS measurements connected by a thin line with some transparency
+    ax[0].plot(gnss[:, 1], gnss[:, 2], color="steelblue", linewidth=0.8, alpha=0.4)
+    ax[0].scatter(gnss[:, 1], gnss[:, 2], s=10, color="steelblue", label="gnss positions")
+    if outliers_idx.size > 0:
+        ax[0].scatter(gnss[outliers_idx, 1], gnss[outliers_idx, 2], s=30, color="red", label="gnss outliers", zorder=5)
+    
+    ax[1].scatter(gnss[:,0], gnss_norm, s=10, color="steelblue", label="gnss position norm")
+    if outliers_idx.size > 0:
+        ax[1].scatter(gnss[outliers_idx, 0], gnss_norm[outliers_idx], s=10, color="red", label="gnss outliers", zorder=5)
+
+    return fig, outliers_idx
+
 
 def main():
     data_loader = VictoriaParkLoader()
@@ -583,21 +600,21 @@ def main():
     odometry = data_loader.odometry
     gnss = data_loader.gnss
 
+    plot_gnss(gnss)
     plot_sensor_timing(lidar, odometry, gnss, window_seconds=1400)
     plot_raw_measurements(lidar, odometry, gnss)
 
     fig = plot_raw_odometry(odometry)
     fig.set_size_inches(11.0, 4.0)  # width, height in inches
-    fig.savefig("src/plot/figures/odometry.pdf", bbox_inches="tight")
+    fig.savefig(f"{FIGURES_ROOT}/odometry.pdf", bbox_inches="tight")
 
     fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
     fig.set_size_inches(6.0, 5.5)  # width, height in inches
-    fig.savefig("src/plot/figures/gnss.pdf", bbox_inches="tight")
-
+    fig.savefig(f"{FIGURES_ROOT}/gnss.pdf", bbox_inches="tight")
     
     fig = plot_lidar_tree_detection_summary(lidar)
     fig.set_size_inches(11.0, 5.5)  # width, height in inches
-    fig.savefig("src/plot/figures/lidar.pdf", bbox_inches="tight")
+    fig.savefig(f"{FIGURES_ROOT}/lidar.pdf", bbox_inches="tight")
 
     plt.show()
 

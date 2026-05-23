@@ -11,8 +11,8 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 from scipy.stats import chi2
 
-from config import SlamConfig
-from utils import ssa
+from master_code.config import SlamConfig
+from master_code.utils import ssa
 
 chi2isf_cached = lru_cache(maxsize=None)(chi2.isf)
 

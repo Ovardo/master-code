@@ -6,15 +6,15 @@ import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
 
-from association import get_associator
-from config import SlamConfig
-from data_loader import LidarStepInput, WheelOdometry
-from div.utils_gtsam import reorder_covariance_naive
-from logger import SlamLogger, AssociationDiagnostics, StepDiagnostics
-from preprocessing import detect_trees, relative_pose
-from sensor import get_sensor_model
-from tentative import TentativeLandmark, get_tentative_landmark_manager
-from utils import pose2_to_array
+from master_code.association import get_associator
+from master_code.config import SlamConfig
+from master_code.data_loader import LidarStepInput, WheelOdometry
+from master_code.div.utils_gtsam import reorder_covariance_naive
+from master_code.logger import SlamLogger, AssociationDiagnostics, StepDiagnostics
+from master_code.preprocessing import detect_trees, relative_pose
+from master_code.sensor import get_sensor_model
+from master_code.tentative import TentativeLandmark, get_tentative_landmark_manager
+from master_code.utils import pose2_to_array
 
 # TODO: visualize display(graphviz.Source(isam.dot()))
 

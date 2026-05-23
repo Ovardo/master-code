@@ -9,12 +9,12 @@ import numpy as np
 from matplotlib.patches import Ellipse
 from scipy.stats import chi2
 
-from association import NIS, individualCompatibility
-from config import SlamConfig
-from data_loader import VictoriaParkLoader
-from logger import SlamLogger
-from utils import rotmat2
-
+from master_code.association import NIS, individualCompatibility
+from master_code.config import SlamConfig
+from master_code.data_loader import VictoriaParkLoader, find_gnss_outliers
+from master_code.logger import SlamLogger
+from master_code.utils import rotmat2
+from master_code.plotting.thesis_style import apply_thesis_style, save_figure, thesis_figsize 
 
 def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, **kwargs) -> Ellipse:
     """Draw a 95% confidence ellipse for a 2D covariance matrix."""
@@ -34,58 +34,81 @@ def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.
         **kwargs,
     )
 
-def draw_pose_covariances(ax, poses: np.ndarray, poses_cov: np.ndarray, cov_stride: int = 10) -> None:
+def draw_pose_covariances(ax, poses: np.ndarray, poses_cov: np.ndarray, cov_stride: int = 10, **kwargs) -> None:
     for pose, cov in zip(poses[::cov_stride], poses_cov[::cov_stride]):
         # Rotate the translational covariance ellipse to world frame
         R = rotmat2(pose[2])
         xy_cov = R @ cov[:2, :2] @ R.T
         
         ax.add_patch(
-            confidence_ellipse_2d(pose[:2], xy_cov, fc="steelblue", alpha=0.3, ec="steelblue", lw=0.5)
+            confidence_ellipse_2d(pose[:2], xy_cov, fc="steelblue", alpha=0.3, ec="steelblue", **kwargs)
         )
 
-def draw_landmark_covariances(ax, landmarks: np.ndarray, landmarks_cov: np.ndarray, alpha: float, lw: float) -> None:
+def draw_landmark_covariances(ax, landmarks: np.ndarray, landmarks_cov: np.ndarray, alpha: float, **kwargs) -> None:
     for lm, cov in zip(landmarks, landmarks_cov):
         ax.add_patch(
-            confidence_ellipse_2d(lm, cov, fc="tomato", alpha=alpha, ec="tomato", lw=lw)
+            confidence_ellipse_2d(lm, cov, fc="tomato", alpha=alpha, ec="tomato", **kwargs)
         )
 
 def plot_estimate(
+    ax: plt.Axes | None = None,
     poses: np.ndarray | None = None,
     poses_cov: np.ndarray | None = None,
     poses_cov_stride: int = 10,
     landmarks: np.ndarray | None = None,
     landmarks_cov: np.ndarray | None = None,
     gnss: np.ndarray | None = None,
-) -> plt.Figure:
+    title: str | None = "MAP Estimate",
+    xlabel: str = "x [m]",
+    ylabel: str = "y [m]",
+    traj_label: str = 'Trajectory',
+    show_legend: bool = True,
+    show_grid: bool = True,
+    equal_aspect: bool = True,
+    tight_layout: bool = True,
+) -> tuple[plt.Figure, plt.Axes]:
     """Plot the trajectory, landmarks, and optional covariances and gnss."""
     
-    fig, ax = plt.subplots(figsize=(10, 10))
-
+    if ax is None:
+        fig, ax = plt.subplots(figsize=thesis_figsize("text"))
+    else:
+        fig = ax.figure
+    
     if poses is not None:
-        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", lw=1.5, label="Trajectory", zorder=2,)
-        ax.scatter(poses[0, 0], poses[0, 1], color="green", s=80, zorder=5, label="Start")
-        ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=80, zorder=5, label="End")
+        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", label=traj_label, zorder=2)
+        ax.scatter(poses[0, 0], poses[0, 1], color="green", s=50, zorder=5, label="Start", marker="o", facecolors="white", edgecolors="green")
+        ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=50, zorder=5, label="End", marker="s", facecolors="white", edgecolors="red")
 
         if poses_cov is not None:
-            draw_pose_covariances(ax, poses, poses_cov, cov_stride=poses_cov_stride)
+            draw_pose_covariances(ax, poses, poses_cov, cov_stride=poses_cov_stride, zorder=2)
 
     if landmarks is not None:
-        ax.scatter(landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", s=40, lw=1.2, label=f"Landmarks ({len(landmarks)})", zorder=3,)
+        ax.scatter(landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", label=f"Landmarks ({len(landmarks)})", zorder=3)
 
         if landmarks_cov is not None:
-            draw_landmark_covariances(ax, landmarks, landmarks_cov, alpha=0.3, lw=0.5)
+            draw_landmark_covariances(ax, landmarks, landmarks_cov, alpha=0.3, zorder=3)
 
     if gnss is not None:
-        ax.scatter(gnss[:, 1], gnss[:, 2], c="gold", marker=".", s=24, alpha=0.6, label="GNSS", zorder=1)
+        ax.scatter(gnss[:, 1], gnss[:, 2], c="gold", marker=".", alpha=0.6, label="GNSS", zorder=1)
     
-    ax.set_title("MAP Estimate")
-    ax.set_xlabel("X (m)")
-    ax.set_ylabel("Y (m)")
-    ax.set_aspect("equal")
-    ax.legend()
-    ax.grid(True, lw=0.4)
-    fig.tight_layout()
+    if title is not None:
+        ax.set_title(title)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    
+    if equal_aspect:
+        ax.set_aspect("equal", adjustable="box")
+
+    if show_legend:
+        ax.legend()
+
+    if show_grid:
+        ax.grid(True, lw=0.4, alpha=0.7)
+
+    if tight_layout:
+        fig.tight_layout()
+
     return fig
 
 
@@ -212,6 +235,7 @@ def _nearest_indices(query_times: np.ndarray, reference_times: np.ndarray) -> np
     return np.where(left_dt <= right_dt, left_indices, right_indices)
 
 
+
 def plot_gnss_pose_error(
     gnss: np.ndarray,
     poses: np.ndarray,
@@ -255,6 +279,8 @@ def plot_gnss_pose_error(
     matched_pose_xy = pose_xy[nearest_pose_indices]
 
     error_xy = matched_pose_xy - gnss[:, 1:3]
+
+    
     error_norm = np.linalg.norm(error_xy, axis=1)
     time_offset = pose_times[nearest_pose_indices] - gnss[:, 0]
     elapsed_time = gnss[:, 0] - pose_times[0]
@@ -680,6 +706,15 @@ class SlamRunPlotter:
         )
         self._finish_figure(fig, "association_nis", save, fmt)
     
+    def plot_position_nis(self, save: bool = True, fmt: str = "pdf") -> None:
+        fig = plot_position_nis(
+            gnss=VictoriaParkLoader().gnss_filtered,
+            poses=self.snapshots[-1].get("poses"),
+            poses_covs=self.snapshots[-1].get("poses_covariance"),
+            poses_times=self.steps.get("scan_time"),
+        )
+        self._finish_figure(fig, "position_nis", save, fmt)
+    
     def plot_association(self, save: bool = True, fmt: str = "pdf") -> None:
         if not self.association:
             print("No association diagnostics found, skipping association plot.")
@@ -705,6 +740,7 @@ class SlamRunPlotter:
         self.plot_error_over_time(save=save)  
         self.plot_gnss_pose_error(save=save)
         self.plot_association_nis(save=save) 
+        self.plot_position_nis(save=save)
         # self.plot_association(save=False)
         plt.show()
 
@@ -727,8 +763,10 @@ def main() -> None:
     
 
 if __name__ == "__main__":
-    plotter = SlamRunPlotter.from_run(Path('runs/20260521_203732_all'))
-    plotter.plot_all(save=False, show=True)
+    apply_thesis_style()
+
+    plotter = SlamRunPlotter.from_run(Path('runs/20260521_191710_forward'))
+    plotter.plot_all(save=True, show=True)
 
     # main()
     

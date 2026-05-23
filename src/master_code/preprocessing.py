@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import gtsam
 import numpy as np
 
-from utils import ssa
+from master_code.utils import ssa
 
 
 @dataclass(frozen=True)

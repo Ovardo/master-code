@@ -17,16 +17,17 @@ class RunSpec:
 
 
 RUNS = [
-    RunSpec("M=1", "runs/20260524_000010_1_4", "steelblue"),
-    RunSpec("M=2", "runs/20260524_002432_2_4", "lightcoral"),
-    RunSpec("M=3", "runs/20260524_002818_3_4", "green"),
-    RunSpec("M=4", "runs/20260524_003427_4_4", "orange"),
+    RunSpec("M=1", "runs/M1_N4", "steelblue"),
+    RunSpec("M=2", "runs/M2_N4", "lightcoral"),
+    RunSpec("M=3", "runs/M3_N4", "green"),
+    RunSpec("M=4", "runs/M4_N4", "orange"),
 ]
 
 TIMING_COMPONENTS = [
     ("duration_covariance_extraction", "Covariance", "#4C78A8"),
-    ("duration_association", "Association", "#F58518"),
+    ("duration_association", "Association", "#ED6516"),
     ("duration_optimization", "Optimization", "#54A24B"),
+    # ("duration_local_landmark_extraction", "Local map", "#E6AF0A"),
 ]
 
 
@@ -143,7 +144,6 @@ def plot_total_breakdown(
     runs: list[tuple[RunSpec, SlamRunPlotter]],
 ) -> None:
     x = np.arange(len(runs))
-    bottom = np.zeros(len(runs))
 
     component_totals = []
     for spec, run in runs:
@@ -155,16 +155,34 @@ def plot_total_breakdown(
     component_totals = np.asarray(component_totals)
     bar_labels = [label for _, label, _ in TIMING_COMPONENTS] + ["Other"]
     bar_colors = [color for _, _, color in TIMING_COMPONENTS] + ["#D45320"]
+    n_components = len(bar_labels)
+    bar_width = min(0.8 / n_components, 0.18)
+    offsets = (np.arange(n_components) - (n_components - 1) / 2) * bar_width
 
     for i, (label, color) in enumerate(zip(bar_labels, bar_colors)):
-        ax.bar(x, component_totals[:, i], bottom=bottom, label=label, color=color, width=0.65)
-        bottom += component_totals[:, i]
+        ax.bar(
+            x + offsets[i],
+            component_totals[:, i],
+            label=label,
+            color=color,
+            width=bar_width,
+        )
 
+    group_tops = np.max(component_totals, axis=1)
+    y_top = np.max(group_tops)
+    ax.set_ylim(0, 1.18 * y_top if y_top > 0 else 1.0)
     for i, (_, run) in enumerate(runs):
         final_landmarks = int(run.steps["num_landmarks"][-1])
-        ax.text(i, bottom[i], f"{final_landmarks} lm", ha="center", va="bottom", fontsize=8)
+        ax.text(
+            i,
+            group_tops[i] + 0.015 * y_top,
+            f"{final_landmarks} lm",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
 
-    ax.set_title("Total Runtime Breakdown")
+    ax.set_title("Total Runtime by Component")
     ax.set_xticks(x, [spec.label for spec, _ in runs])
     ax.set_ylabel("Total runtime [s]")
     ax.grid(True, axis="y", lw=0.4)
@@ -211,12 +229,25 @@ def main(show: bool = True) -> None:
 
     runs = [(spec, SlamRunPlotter.from_run(spec.path)) for spec in RUNS]
 
-    fig, axes = plt.subplots(2, 2, figsize=(8, 8), tight_layout=True)
-    runs[0][1].plot_final_snapshot(axes[0, 0], title="M=1", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
-    runs[1][1].plot_final_snapshot(axes[0, 1], title="M=2", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
-    runs[2][1].plot_final_snapshot(axes[1, 0], title="M=3", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
-    runs[3][1].plot_final_snapshot(axes[1, 1], title="M=4", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
-    save_figure(fig, "compare_mn_estimate")
+    fig, axes = plt.subplots(1, 4, figsize=(8, 2.5), gridspec_kw={"wspace": 0})
+    runs[0][1].plot_final_snapshot(axes[0], title="M=1", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
+    runs[1][1].plot_final_snapshot(axes[1], title="M=2", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
+    runs[2][1].plot_final_snapshot(axes[2], title="M=3", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
+    runs[3][1].plot_final_snapshot(axes[3], title="M=4", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
+    for ax in axes:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xticks([], minor=True)
+        ax.set_yticks([], minor=True)
+    fig.subplots_adjust(left=0, right=1, wspace=0)
+    save_figure(fig, "compare_mn_estimate", bbox_inches="tight", pad_inches=0)
+
+    fig, ax = plt.subplots(figsize=(8, 3))
+    for spec, run in runs:
+        run.plot_error_over_time(ax, label=spec.label, color=spec.color)
+    ax.legend(title="N=4")
+    save_figure(fig, "compare_mn_ange")
+
 
     fig, axes = plt.subplots(3, 1, figsize=(8, 6), tight_layout=True)
     plot_growth(axes[0], runs)

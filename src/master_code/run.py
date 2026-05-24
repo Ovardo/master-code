@@ -1,9 +1,7 @@
 # Adapted from Odin Aleksander Severinsen Graded Assignment 2 code in TTK4250.
-from datetime import datetime
-from pathlib import Path
-
-from tqdm import tqdm
 import time
+from datetime import datetime
+from tqdm import tqdm
 
 from master_code.config import SlamConfig
 from master_code.data_loader import VictoriaParkLoader
@@ -15,7 +13,7 @@ from master_code.paths import RUNS_ROOT
 
 def main() -> None:
     
-    output_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d_%H%M%S_4_6")
 
     config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)
@@ -33,7 +31,7 @@ def main() -> None:
     )
 
     # Num lidar scan steps
-    K = 7300 # max is 7248
+    K = 7250 # max is 7248
 
     steps_diagnostics_list = []
 

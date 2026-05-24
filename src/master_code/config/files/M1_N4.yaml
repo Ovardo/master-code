@@ -13,8 +13,8 @@ sensor:
   max_range: 45.0
   fov_deg: 220.0
 tentative:
-  M: 4
-  N: 6
+  M: 1
+  N: 4
   gate: 0.05
 association:
   method: jcbb
@@ -27,4 +27,3 @@ logging:
   log_snapshot: False
   snapshot_stride: 1
   snapshot_steps: []
-  log_error: True

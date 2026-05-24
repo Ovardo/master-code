@@ -35,8 +35,8 @@ def apply_thesis_style():
         # "savefig.bbox": "tight",
     })
 
-def save_figure(fig, name):
+def save_figure(fig, name, **savefig_kwargs):
     path = FIGURES_ROOT / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path.with_suffix(".pdf"))
-    fig.savefig(path.with_suffix(".png"), dpi=SAVE_DPI)
+    fig.savefig(path.with_suffix(".pdf"), **savefig_kwargs)
+    fig.savefig(path.with_suffix(".png"), dpi=SAVE_DPI, **savefig_kwargs)

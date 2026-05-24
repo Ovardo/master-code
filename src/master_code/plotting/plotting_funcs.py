@@ -69,7 +69,7 @@ def plot_estimate(
     kwargs.setdefault("y_label", "y [m]")
 
     if poses is not None:
-        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", label=kwargs.get("traj_label"), zorder=2)
+        ax.plot(poses[:, 0], poses[:, 1], color="steelblue", label=kwargs.get("traj_label"), zorder=4)
         ax.scatter(poses[0, 0], poses[0, 1], color="green", s=50, zorder=5, label="Start", marker="o", facecolors="white", edgecolors="green")
         ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=50, zorder=5, label="End", marker="s", facecolors="white", edgecolors="red")
 
@@ -97,17 +97,53 @@ def plot_estimate(
 
     return fig, ax
 
+def plot_cumulative_timing(
+    steps: np.ndarray,
+    t_cov: np.ndarray,
+    t_assoc: np.ndarray,
+    t_opt: np.ndarray,
+    t_lmap: np.ndarray,
+    t_total: np.ndarray,  
+    axes: plt.Axes | None = None,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot per-step and cumulative processing time breakdown."""
+    if axes is None:
+        fig, ax = plt.subplots(figsize=(8, 3), sharex=True, tight_layout=True)
+    else:
+        fig = ax.figure
+
+    t_cov   = np.nan_to_num(t_cov,   nan=0.0)
+    t_assoc = np.nan_to_num(t_assoc, nan=0.0)
+    t_opt   = np.nan_to_num(t_opt,   nan=0.0)
+    t_lmap  = np.nan_to_num(t_lmap,  nan=0.0)
+    t_total = np.nan_to_num(t_total, nan=0.0)
+
+    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt + t_lmap), 0.0)
+
+    labels = ["Covariance extraction", "Association", "Optimisation", "Local Landmark Extraction", "Other"]
+    parts = [t_cov, t_assoc, t_opt, t_lmap, t_other]
+
+    parts_ms = [1000*p for p in parts]
+    ax.stackplot(steps, *parts_ms, labels=labels)
+    ax.set_ylabel("Time (ms)")
+    ax.set_title("Per-step Processing Time")
+    ax.legend(loc="upper left", fontsize=8)
+    ax.grid(True, lw=0.4)
+
+    return fig, axes
+        
 
 def plot_timing_breakdown(
     steps: np.ndarray,
     t_cov: np.ndarray,
     t_assoc: np.ndarray,
     t_opt: np.ndarray,
-    t_tent: np.ndarray,
     t_lmap: np.ndarray,
-    t_inno: np.ndarray,
-    t_scan: np.ndarray,
     t_total: np.ndarray,
+    # t_tent: np.ndarray,
+    # t_inno: np.ndarray,
+    # t_scan: np.ndarray,
+    
     axes: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot per-step and cumulative processing time breakdown."""
@@ -119,17 +155,16 @@ def plot_timing_breakdown(
     t_cov   = np.nan_to_num(t_cov,   nan=0.0)
     t_assoc = np.nan_to_num(t_assoc, nan=0.0)
     t_opt   = np.nan_to_num(t_opt,   nan=0.0)
-    t_tent  = np.nan_to_num(t_tent,  nan=0.0)
     t_lmap  = np.nan_to_num(t_lmap,  nan=0.0)
-    t_inno  = np.nan_to_num(t_inno,  nan=0.0)
-    t_scan  = np.nan_to_num(t_scan,  nan=0.0)
     t_total = np.nan_to_num(t_total, nan=0.0)
+    # t_tent  = np.nan_to_num(t_tent,  nan=0.0)
+    # t_inno  = np.nan_to_num(t_inno,  nan=0.0)
+    # t_scan  = np.nan_to_num(t_scan,  nan=0.0)
+    
+    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt + t_lmap), 0.0)
 
-
-    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt + t_tent + t_lmap + t_inno + t_scan), 0.0)
-
-    labels = ["Covariance extraction", "Association", "Optimisation", "Tentative Processing", "Local Landmark Extraction", "Innovation Covariance", "Scan Processing", "Other"]
-    parts = [t_cov, t_assoc, t_opt, t_tent, t_lmap, t_inno, t_scan, t_other]
+    labels = ["Covariance extraction", "Association", "Optimisation", "Local Landmark Extraction", "Other"]
+    parts = [t_cov, t_assoc, t_opt, t_lmap, t_other]
 
     parts_ms = [1000*p for p in parts]
     axes[0].stackplot(steps, *parts_ms, labels=labels)
@@ -153,44 +188,30 @@ def plot_timing_over_time(
     t_cov: np.ndarray,
     n_local: np.ndarray,
     axes: plt.Axes | None = None,
-) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
+) -> tuple[plt.Figure, plt.Axes]:
     """Plot covariance recovery step time and in-view predicted landmark count."""
-    cov_color = "steelblue"
-    local_color = "tomato"
+    cov_color = "tab:blue"
+    local_color = "tab:orange"
 
     if axes is None:
-        fig, ax_time = plt.subplots(figsize=(8, 3.5), tight_layout=True)
-    elif isinstance(axes, (list, tuple, np.ndarray)):
-        axes_flat = np.ravel(axes)
-        ax_time = axes_flat[0]
-        fig = ax_time.figure
-        for extra_ax in axes_flat[1:]:
-            extra_ax.remove()
+        fig, axes = plt.subplots(2, 1,figsize=(8, 3), tight_layout=True)
     else:
-        ax_time = axes
-        fig = ax_time.figure
+        fig = axes[0].figure
 
-    ax_count = ax_time.twinx()
+    axes[0].plot(steps, t_cov, lw=0.8, color=cov_color, label="Covariance recovery time")
+    axes[0].set_ylabel("Time (s)")
+    axes[0].set_yscale("log")
+    axes[0].grid(True, which="both", axis="both", lw=0.4)
+    axes[0].legend(loc="upper left")
+    axes[0].tick_params(axis="x", which="both", labelbottom=False)
 
-    time_line, = ax_time.plot(steps, t_cov, lw=0.8, color=cov_color, label="Covariance time")
-    count_line, = ax_count.plot(steps, n_local, lw=0.8, color=local_color, label="In-view landmarks")
+    axes[1].plot(steps, n_local, lw=0.8, color=local_color, label="# In-view landmarks")
+    axes[1].set_ylabel("# In-view landmarks")
+    axes[1].set_xlabel("Scan step")
+    axes[1].grid(True, lw=0.4)
+    axes[1].legend(loc="upper left")
 
-    ax_time.set_xlabel("Scan step")
-    ax_time.set_ylabel("Time (s)", color=cov_color)
-    ax_time.set_yscale("log", nonpositive="clip")
-    ax_time.tick_params(axis="y", colors=cov_color)
-    ax_time.spines["left"].set_color(cov_color)
-    ax_time.set_title("Covariance Recovery Time and In-view Landmark Count")
-    ax_time.grid(True, which="both", lw=0.4)
-
-    ax_count.set_ylabel("# In-view landmarks", color=local_color)
-    ax_count.tick_params(axis="y", colors=local_color)
-    ax_count.spines["right"].set_color(local_color)
-    ax_count.grid(False)
-
-    ax_time.legend(handles=[time_line, count_line], loc="upper left", fontsize=8)
-
-    return fig, (ax_time, ax_count)
+    return fig, axes
 
 
 def plot_timing_vs_landmarks(
@@ -235,10 +256,11 @@ def plot_landmark_growth(
 
 
 def plot_error(
-    steps: np.ndarray,
+    scan_steps: np.ndarray,
     error: np.ndarray,
     n_factors: np.ndarray,
     ax: plt.Axes | None = None,
+    **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot the graph error over steps."""
     if ax is None:
@@ -247,9 +269,17 @@ def plot_error(
         fig = ax.figure
     
     mask = ~np.isnan(error)
-    error_avg = error[mask] / n_factors[mask] 
+    
+    n_factors_poses = scan_steps + 1 # (+1 for prior factor)
+    n_factors_landmarks = n_factors - n_factors_poses
+    n_scalar_factors = 3*n_factors_poses + 2*n_factors_landmarks
 
-    ax.plot(steps[mask], error_avg, lw=1.2, color="steelblue")
+    # Average normalized factor errror (multiply by 2 first as the gtsam returns 1/2 sum_i r_i^T * Sigma_i^-1 * r_i)
+    ANFE = 2*error[mask] / n_scalar_factors[mask] 
+    
+    kwargs.setdefault("lw", 1.2)
+    kwargs.setdefault("color", "steelblue")
+    ax.plot(scan_steps[mask], ANFE, **kwargs)
     ax.set_xlabel("Scan step")
     ax.set_ylabel("ANFE")
     ax.set_title("Average Normalized Factor Error")

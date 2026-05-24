@@ -81,12 +81,12 @@ class SlamRunPlotter:
             t_cov   = self.steps.get("duration_covariance_extraction"),
             t_assoc = self.steps.get("duration_association"),
             t_opt   = self.steps.get("duration_optimization"),
-            t_tent  = self.steps.get("duration_tentative_processing"),
             t_lmap  = self.steps.get("duration_local_landmark_extraction"),
-            t_inno  = self.steps.get("duration_innovation_covariance"),
-            t_scan  = self.steps.get("duration_scan_processing"),
             t_total = self.steps.get("duration_update"),
-
+            # t_tent  = self.steps.get("duration_tentative_processing"),
+            # t_inno  = self.steps.get("duration_innovation_covariance"),
+            # t_scan  = self.steps.get("duration_scan_processing"),
+            
         )
         return fig, axes
     
@@ -116,12 +116,13 @@ class SlamRunPlotter:
         )
         return fig, ax
     
-    def plot_error_over_time(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+    def plot_error_over_time(self, ax = None, **kwargs) -> tuple[plt.Figure, plt.Axes]:
         fig, ax = plot_error(
-            ax        = ax,
-            steps     = self.steps.get("scan_step"),
-            error     = self.steps.get("factor_graph_error"),
-            n_factors = self.steps.get("num_factors"),
+            ax         = ax,
+            scan_steps = self.steps.get("scan_step"),
+            error      = self.steps.get("factor_graph_error"),
+            n_factors  = self.steps.get("num_factors"),
+            **kwargs,
         )
         return fig, ax
 

@@ -185,6 +185,8 @@ class LoggingConfig:
     snapshot_stride: int = 200
     snapshot_steps: list[int] = field(default_factory=list)
 
+    log_error: bool = False
+
     def __post_init__(self):
         if self.association_stride <= 0:
             raise ValueError(f"association_stride must be positive, got {self.association_stride}")

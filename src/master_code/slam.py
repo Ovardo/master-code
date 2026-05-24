@@ -107,8 +107,12 @@ class FactorGraphSLAM:
         self.step_diagnostics.scan_time = data.scan_time
         self.step_diagnostics.scan_step = data.scan_step
         self.step_diagnostics.num_landmarks = self.num_landmarks
-        # self.step_diagnostics.factor_graph_error = self.get_error() # consider commenting out this for faster runtime
-        # self.step_diagnostics.num_factors = self.get_num_factors() # consider commenting out this for faster runtime
+        
+        # Additional optional metrics for ANFE (Average Normalized Factor Error), comment out for faster runtime
+        if self.cfg.logging.log_error:
+            error, num_factors = self.get_error()
+            self.step_diagnostics.factor_graph_error = error 
+            self.step_diagnostics.num_factors = num_factors
         
         if self.logger.should_save_snapshot(data.scan_step):
             self.logger.save_snapshot(
@@ -328,8 +332,17 @@ class FactorGraphSLAM:
         if len(query) <= 1:
             return np.zeros([3,3]) 
     
-        covariance = self.isam2.jointMarginalCovariance(query)
-        covariance = reorder_covariance_naive(covariance.fullMatrix())
+        # New: Local - Steiner Tree on Bayes tree
+        covariance = self.isam2.jointMarginalCovariance(query).fullMatrix()
+        
+        # Old: Global - Constrained multifrontal elimination recovery on entire graph. Must use gtsam release 4.2 TODO
+        # graph = self.isam2.getFactorsUnsafe()
+        # values = self.isam2.calculateEstimate()
+        # marginals = gtsam.Marginals(graph, values) 
+        # covariance = marginals.jointMarginalCovariance(query).fullMatrix()
+
+        # Reorder as gtsam orders internally based on keys 
+        covariance = reorder_covariance_naive(covariance)
 
         self.step_diagnostics.duration_covariance_extraction = time.perf_counter() - _t0
         return covariance
@@ -377,13 +390,14 @@ class FactorGraphSLAM:
                 )
     
     # Getters for logging and visualization
-    def get_error(self) -> float:
-        factors = self.isam2.getFactorsUnsafe()
+    def get_error(self) -> tuple[float, int]:
+        factors = self.isam2.getFactorsUnsafe() 
         estimate = self.isam2.calculateEstimate()
-        return factors.error(estimate)
+        error = factors.error(estimate) # 1/2 sum_i r_i^T * Sigma_i^-1 * r_i
+        return error, factors.size()
     
-    def get_num_factors(self) -> int:
-        return self.isam2.getFactorsUnsafe().size()
+    # def get_num_factors(self) -> int:
+    #     return self.isam2.getFactorsUnsafe().size()
 
     def get_poses(self) -> np.ndarray:
         """Get all pose estimates"""

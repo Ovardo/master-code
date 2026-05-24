@@ -35,10 +35,11 @@ class SlamRunPlotter:
     
     @classmethod
     def from_run(cls, run_dir: Path | str) -> SlamRunPlotter:
-        steps       = SlamLogger.load_steps(run_dir)
-        snapshots   = SlamLogger.load_all_snapshots(run_dir)
-        association = SlamLogger.load_all_association_diagnostics(run_dir)
-        config      = SlamConfig.load(run_dir / "config.yaml")
+        run_path = Path(run_dir)
+        steps       = SlamLogger.load_steps(run_path)
+        snapshots   = SlamLogger.load_all_snapshots(run_path)
+        association = SlamLogger.load_all_association_diagnostics(run_path)
+        config      = SlamConfig.load(run_path / "config.yaml")
         
         return cls(run_dir=run_dir, steps=steps, snapshots=snapshots, association=association, config=config)
     
@@ -60,7 +61,7 @@ class SlamRunPlotter:
         if not show:
             plt.close(fig)
 
-    def plot_final_snapshot(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+    def plot_final_snapshot(self, ax = None, **kwargs) -> tuple[plt.Figure, plt.Axes]:
         fig, ax = plot_estimate(
             ax            = ax,
             poses         = self.snapshots[-1].get("poses"),
@@ -68,7 +69,8 @@ class SlamRunPlotter:
             landmarks     = self.snapshots[-1].get("landmarks"),
             landmarks_cov = self.snapshots[-1].get("landmarks_covariance"), 
             gnss = VictoriaParkLoader().gnss_filtered,
-            poses_cov_stride = 20
+            poses_cov_stride = 20,
+            **kwargs
         )
         return fig, ax
         
@@ -88,7 +90,7 @@ class SlamRunPlotter:
         )
         return fig, axes
     
-    def plot_timing_over_time(self, axes = None) -> tuple[plt.Figure, plt.Axes]:
+    def plot_timing_over_time(self, axes = None) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
         fig, axes = plot_timing_over_time(
             axes    = axes,
             steps   = self.steps.get("scan_step"),
@@ -105,11 +107,12 @@ class SlamRunPlotter:
         )
         return fig, ax
 
-    def plot_landmark_growth(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+    def plot_landmark_growth(self, ax = None, **kwargs) -> tuple[plt.Figure, plt.Axes]:
         fig, ax = plot_landmark_growth(
             ax          = ax,
             steps       = self.steps.get("scan_step"),
             n_landmarks = self.steps.get("num_landmarks"),
+            **kwargs
         )
         return fig, ax
     

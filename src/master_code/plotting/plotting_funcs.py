@@ -65,7 +65,9 @@ def plot_estimate(
     kwargs.setdefault("equal_aspect", True)
     kwargs.setdefault("title", "MAP Estimate")
     kwargs.setdefault("traj_label", "Trajectory")
-    
+    kwargs.setdefault("x_label", "x [m]")
+    kwargs.setdefault("y_label", "y [m]")
+
     if poses is not None:
         ax.plot(poses[:, 0], poses[:, 1], color="steelblue", label=kwargs.get("traj_label"), zorder=2)
         ax.scatter(poses[0, 0], poses[0, 1], color="green", s=50, zorder=5, label="Start", marker="o", facecolors="white", edgecolors="green")
@@ -84,11 +86,14 @@ def plot_estimate(
         ax.scatter(gnss[:, 1], gnss[:, 2], c="gold", marker=".", alpha=0.6, label="GNSS", zorder=1)
 
     ax.set_title(kwargs["title"])
-    ax.set_xlabel("x [m]")
-    ax.set_ylabel("y [m]")
-    ax.set_aspect(kwargs["equal_aspect"], adjustable="box")
-    ax.grid(kwargs["show_grid"], lw=0.4, alpha=0.7)
-    ax.legend()
+    ax.set_xlabel(kwargs["x_label"])
+    ax.set_ylabel(kwargs["y_label"])
+    if kwargs["show_grid"]:   
+        ax.grid(lw=0.4, alpha=0.7)
+    if kwargs["equal_aspect"]:
+        ax.set_aspect("equal", adjustable="box") 
+    if kwargs["show_legend"]:
+        ax.legend()
 
     return fig, ax
 
@@ -148,26 +153,44 @@ def plot_timing_over_time(
     t_cov: np.ndarray,
     n_local: np.ndarray,
     axes: plt.Axes | None = None,
-) -> tuple[plt.Figure, plt.Axes]:
+) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
     """Plot covariance recovery step time and in-view predicted landmark count."""
+    cov_color = "steelblue"
+    local_color = "tomato"
+
     if axes is None:
-        fig, axes = plt.subplots(2, 1, figsize=(8, 3.5), sharex=True, tight_layout=True)
-    else:        
-        fig = axes[0].figure
+        fig, ax_time = plt.subplots(figsize=(8, 3.5), tight_layout=True)
+    elif isinstance(axes, (list, tuple, np.ndarray)):
+        axes_flat = np.ravel(axes)
+        ax_time = axes_flat[0]
+        fig = ax_time.figure
+        for extra_ax in axes_flat[1:]:
+            extra_ax.remove()
+    else:
+        ax_time = axes
+        fig = ax_time.figure
 
-    axes[0].plot(steps, t_cov, lw=0.8, color="steelblue")
-    axes[0].set_ylabel("Time (s)")
-    axes[0].set_yscale("log")
-    axes[0].set_title("Covariance Recovery Step Processing Time")
-    axes[0].grid(True, which="both", lw=0.4)
+    ax_count = ax_time.twinx()
 
-    axes[1].plot(steps, n_local, lw=0.8, color="tomato")
-    axes[1].set_ylabel("# In-view landmarks")
-    axes[1].set_xlabel("Scan step")
-    axes[1].set_title("In-view Predicted Landmark Count")
-    axes[1].grid(True, lw=0.4)
+    time_line, = ax_time.plot(steps, t_cov, lw=0.8, color=cov_color, label="Covariance time")
+    count_line, = ax_count.plot(steps, n_local, lw=0.8, color=local_color, label="In-view landmarks")
 
-    return fig, axes
+    ax_time.set_xlabel("Scan step")
+    ax_time.set_ylabel("Time (s)", color=cov_color)
+    ax_time.set_yscale("log", nonpositive="clip")
+    ax_time.tick_params(axis="y", colors=cov_color)
+    ax_time.spines["left"].set_color(cov_color)
+    ax_time.set_title("Covariance Recovery Time and In-view Landmark Count")
+    ax_time.grid(True, which="both", lw=0.4)
+
+    ax_count.set_ylabel("# In-view landmarks", color=local_color)
+    ax_count.tick_params(axis="y", colors=local_color)
+    ax_count.spines["right"].set_color(local_color)
+    ax_count.grid(False)
+
+    ax_time.legend(handles=[time_line, count_line], loc="upper left", fontsize=8)
+
+    return fig, (ax_time, ax_count)
 
 
 def plot_timing_vs_landmarks(
@@ -194,6 +217,7 @@ def plot_landmark_growth(
     steps: np.ndarray, 
     n_landmarks: np.ndarray,
     ax: plt.Axes | None = None,
+    **kwargs
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot confirmed landmark count over time."""
     if ax is None:
@@ -201,12 +225,12 @@ def plot_landmark_growth(
     else:
         fig = ax.figure
 
-    ax.plot(steps, n_landmarks, lw=1.2, color="steelblue")
+
+    ax.plot(steps, n_landmarks, **kwargs)
     ax.set_xlabel("Scan step")
     ax.set_ylabel("# landmarks")
     ax.set_title("Landmark Count Over Time")
     ax.grid(True, lw=0.4)
-    fig.tight_layout()
     return fig, ax 
 
 

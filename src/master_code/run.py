@@ -13,7 +13,7 @@ from master_code.paths import RUNS_ROOT
 
 def main() -> None:
     
-    output_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d_%H%M%S_4_6")
+    output_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d_%H%M%S_with_sliding_3_4")
 
     config_name = "vp1.yaml"
     config = SlamConfig.load(config_name)
@@ -33,20 +33,20 @@ def main() -> None:
     # Num lidar scan steps
     K = 7250 # max is 7248
 
-    steps_diagnostics_list = []
+    diagnostics_steps = []
 
     # Main loop
     t0 = time.perf_counter()
     for k, meas in tqdm(enumerate(loader.iterate(K)), total=min(K, 7248), desc="SLAM"):
 
         diagnostics = slam.update(meas)
-        steps_diagnostics_list.append(diagnostics)
+        diagnostics_steps.append(diagnostics)
 
     total_time = time.perf_counter() - t0
 
     logger.save_snapshot(k, slam.get_snapshot(), final=True)
-    logger.save_steps_diagnostics(steps_diagnostics_list)
-    logger.save_metadata(steps_diagnostics_list[-1], total_time)
+    logger.save_steps_diagnostics(diagnostics_steps)
+    logger.save_metadata(diagnostics_steps[-1], total_time)
 
     # Produce + save figures.
     plotter = SlamRunPlotter.from_run(output_dir)

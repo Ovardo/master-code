@@ -31,3 +31,15 @@ def pose2_to_array(p: gtsam.Pose2) -> np.ndarray:
     """Convert gtsam.Pose2 -> np.array([x, y, theta])"""
     return np.array([p.x(), p.y(), p.theta()])
 
+def reorder_covariance_naive(cov: np.ndarray) -> np.ndarray:
+    """
+    Reorder covariance from [lm_id1, lm_id2, ..., pose] to [pose, lm_id1, lm_id2, ...], 
+    assuming pose is last 3 entries and rest are landmarks with id(j) < id(j+1)
+    NOTE: this needs more attention when introducing other variable types than X and L in GTSAM
+    or when when landmark ordering is not guaranteed to be by id...
+    """
+    n = cov.shape[0]
+    perm = np.r_[n-3:n, 0:n-3]
+    cov_new = cov[np.ix_(perm, perm)]
+    return cov_new
+

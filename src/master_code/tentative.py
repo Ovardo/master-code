@@ -154,6 +154,7 @@ class TentativeLandmarkManager:
 
             match_idx = self._find_best_match(W_l, current_step)
 
+            # Landmark not matched to existing tentative, spawn new one. Otherwise, update matched tentative.
             if match_idx is None:
                 self._spawn_tentative(
                     step=current_step,
@@ -182,7 +183,7 @@ class TentativeLandmarkManager:
         best_dist = np.inf
 
         for i, landmark in enumerate(self.tentative_landmarks):
-            # Optional: skip landmarks already updated this step
+            # skip landmarks already updated this step
             if landmark.last_seen_step == current_step:
                 continue
 
@@ -231,14 +232,15 @@ class TentativeLandmarkManager:
         Remove tentative landmarks that can no longer reach M observations within
         their N-step confirmation window.
         """
+        # Alt 1: Fixed lifetime interpretation
         self.tentative_landmarks = [lm for lm in self.tentative_landmarks
             if lm.can_still_be_confirmed(current_step, self.M, self.N)
         ]
 
-        # # for sliding window interpretation:
+        # Alt 2: Sliding window interpretation
         # self.tentative_landmarks = [
         #     lm for lm in self.tentative_landmarks
-        #     if lm.steps_since_seen(current_step) <= self.max_missed_steps
+        #     if lm.steps_since_seen(current_step) <= self.N
         # ]
 
     def reset(self) -> None:

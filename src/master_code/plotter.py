@@ -131,6 +131,7 @@ class SlamRunPlotter:
             axes = axes,
             steps = self.steps.get("scan_step"),
             covs = self.snapshots[-1].get("poses_covariance"),
+            poses = self.snapshots[-1].get("poses"),
         )
         return fig, axes
 

@@ -22,12 +22,12 @@ def thesis_figsize(width="text", ratio=0.62):
 
 def apply_thesis_style():
     plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "legend.fontsize": 8,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
+        "font.size": 10,
+        "axes.labelsize": 10,
+        "axes.titlesize": 10,
+        "legend.fontsize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
         "lines.linewidth": 1,
         "lines.markersize": 4,
         "figure.dpi": DISPLAY_DPI,

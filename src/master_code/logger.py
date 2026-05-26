@@ -86,9 +86,6 @@ class StepDiagnostics:
         """Accumulate timing diagnostics by field name."""
         setattr(self, name, getattr(self, name) + dt)
 
-    def as_dict(self) -> dict[str, float | int]:
-        """Return diagnostics as a plain dictionary."""
-        return {field.name: getattr(self, field.name) for field in fields(self)}
 
 
 class SlamLogger:
@@ -113,6 +110,10 @@ class SlamLogger:
         self.log_snapshot = config.log_snapshot
         self.snapshot_stride = config.snapshot_stride
         self.snapshot_steps = {step for step in config.snapshot_steps}
+
+    # ------------------------------------------------------------------
+    # Saving
+    # ------------------------------------------------------------------
 
     def should_save_association_diagnostics(self, scan_step: int) -> bool:
         """Return whether this scan should get a full association diagnostic file."""
@@ -195,29 +196,9 @@ class SlamLogger:
                 )
             )
 
-
-    def save(self, 
-             step: int,
-             steps: list[StepDiagnostics],
-             snapshot: dict[str, np.ndarray], 
-             verbose=True) -> None:
-
-        steps_dict = self.save_steps_diagnostics(steps)
-        self.save_snapshot(step, snapshot, final=True)
-        self.save_metadata(steps_dict, snapshot, verbose=verbose)
-
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
-    # @staticmethod
-    # def _load_npz_dict(path: Path | str) -> dict[str, np.ndarray]:
-    #     path = Path(path)
-    #     if not path.exists():
-    #         raise FileNotFoundError(path)
-    #     # Could consider doing lazy loading, returning np.load() instead of dict
-    #     with np.load(path, allow_pickle=False) as archive:
-    #         return {k: archive[k] for k in archive.files}
-    
     @staticmethod
     def _load_npz_dict(path: Path | str) -> dict[str, np.ndarray]:
         path = Path(path)

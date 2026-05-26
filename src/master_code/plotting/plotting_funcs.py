@@ -289,13 +289,26 @@ def plot_error(
 
 def plot_pose_covariance_evolution(
     covs: np.ndarray,
+    poses: np.ndarray | None = None,
     steps: np.ndarray | None = None,
     axes: np.ndarray | None = None,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Plot 1, 2, and 3 sigma pose covariance envelopes around zero."""
-    covs = np.asarray(covs)
+    """Plot 1, 2, and 3 sigma pose covariance envelopes around zero.
+
+    When poses are provided, the translational covariance is rotated to the
+    world frame before extracting the x/y standard deviations.
+    """
+    covs = np.asarray(covs, dtype=float)
     if covs.ndim != 3 or covs.shape[1:] != (3, 3):
         raise ValueError("covs must have shape (N, 3, 3).")
+
+    use_world_frame_xy = poses is not None
+    if poses is not None:
+        poses = np.asarray(poses, dtype=float)
+        if poses.ndim != 2 or poses.shape[1] != 3:
+            raise ValueError("poses must have shape (N, 3).")
+        if len(poses) != len(covs):
+            raise ValueError("poses must have the same length as covs.")
 
     if steps is None:
         steps = np.arange(len(covs))
@@ -309,10 +322,18 @@ def plot_pose_covariance_evolution(
     else:
         fig = axes[0].figure
 
-    sigmas = np.sqrt(np.maximum(np.diagonal(covs, axis1=1, axis2=2), 0.0))
-    sigma_x = sigmas[:, 0]
-    sigma_y = sigmas[:, 1]
-    sigma_theta = np.rad2deg(sigmas[:, 2])
+    xy_covs = covs[:, :2, :2]
+    if poses is not None:
+        xy_covs_world = np.empty_like(xy_covs)
+        for i, (pose, xy_cov) in enumerate(zip(poses, xy_covs)):
+            R = rotmat2(pose[2])
+            xy_covs_world[i] = R @ xy_cov @ R.T
+        xy_covs = xy_covs_world
+
+    sigmas_xy = np.sqrt(np.maximum(np.diagonal(xy_covs, axis1=1, axis2=2), 0.0))
+    sigma_x = sigmas_xy[:, 0]
+    sigma_y = sigmas_xy[:, 1]
+    sigma_theta = np.rad2deg(np.sqrt(np.maximum(covs[:, 2, 2], 0.0)))
 
     labels = ["x [m]", "y [m]", r"$\theta$ [deg]"]
     sigma_series = [sigma_x, sigma_y, sigma_theta]
@@ -338,7 +359,8 @@ def plot_pose_covariance_evolution(
         ax.set_ylabel(ylabel)
         ax.grid(True, lw=0.4, alpha=0.7)
 
-    axes[0].set_title("Pose Covariance Envelopes")
+    title = "World-frame Pose Covariance Envelopes" if use_world_frame_xy else "Pose Covariance Envelopes"
+    axes[0].set_title(title)
     axes[-1].set_xlabel("Scan step")
     axes[0].legend(loc="upper left", ncols=3, fontsize=8)
 

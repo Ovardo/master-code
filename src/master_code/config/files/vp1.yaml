@@ -14,8 +14,8 @@ sensor:
   fov_deg: 220.0
 tentative:
   M: 4
-  N: 6
-  gate: 0.05
+  N: 4
+  gate: 0.2
 association:
   method: jcbb
   alpha_individual: 0.9999
@@ -27,4 +27,4 @@ logging:
   log_snapshot: False
   snapshot_stride: 1
   snapshot_steps: []
-  log_error: True
+  log_error: False

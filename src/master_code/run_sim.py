@@ -8,7 +8,10 @@ from master_code.data_loader import VictoriaParkLoader
 from master_code.logger import SlamLogger
 from master_code.plotter import SlamRunPlotter
 from master_code.slam import FactorGraphSLAM
-from master_code.paths import RUNS_ROOT
+from master_code.paths import RUNS_ROOT, DATA_ROOT
+
+from pathlib import Path
+from scipy.io import loadmat
 
 
 def main() -> None:
@@ -20,14 +23,18 @@ def main() -> None:
     logger = SlamLogger(output_dir, config.logging)
     config.save(output_dir / "config.yaml")
 
-    # Data-loader
-    loader = VictoriaParkLoader()
+    simSLAM_ws = loadmat(DATA_ROOT / "simulatedSLAM.mat")
+
+    z = [zk.T for zk in simSLAM_ws["z"].ravel()]
+    landmarks = simSLAM_ws["landmarks"].T
+    odometry = simSLAM_ws["odometry"].T
+    poseGT = simSLAM_ws["poseGT"].T
 
     # SLAM system
     slam = FactorGraphSLAM(
         config=config,
         logger=logger,
-        initial_pose=loader.initial_pose,
+        initial_pose=poseGT[0],
     )
 
     # Num lidar scan steps

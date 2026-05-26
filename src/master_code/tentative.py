@@ -233,15 +233,15 @@ class TentativeLandmarkManager:
         their N-step confirmation window.
         """
         # Alt 1: Fixed lifetime interpretation
-        self.tentative_landmarks = [lm for lm in self.tentative_landmarks
-            if lm.can_still_be_confirmed(current_step, self.M, self.N)
-        ]
+        # self.tentative_landmarks = [lm for lm in self.tentative_landmarks
+        #     if lm.can_still_be_confirmed(current_step, self.M, self.N)
+        # ]
 
         # Alt 2: Sliding window interpretation
-        # self.tentative_landmarks = [
-        #     lm for lm in self.tentative_landmarks
-        #     if lm.steps_since_seen(current_step) <= self.N
-        # ]
+        self.tentative_landmarks = [
+            lm for lm in self.tentative_landmarks
+            if lm.steps_since_seen(current_step) <= self.N
+        ]
 
     def reset(self) -> None:
         """Remove all tentative landmarks."""

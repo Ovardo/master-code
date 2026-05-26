@@ -59,8 +59,10 @@ def relative_pose(vel_e, steer, dt):
 
     # Integrate twist over time interval using Expmap 
     odo = gtsam.Pose2.Expmap(twist_b*dt)
-    J_odo_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
     
+    # Jacboian if wanting to propoagte noise on vel_e and steer
+    J_odo_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
+
     # Jacobian of twist w.r.t. u = [vel_e, steer] 
     dvc_dve = 1.0 / d
     dvc_da  = vel_e * (k * sec2) / (d*d)

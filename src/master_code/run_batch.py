@@ -13,7 +13,7 @@ from master_code.config import SlamConfig
 from master_code.data_loader import VictoriaParkLoader
 from master_code.logger import SlamLogger, StepDiagnostics
 from master_code.paths import RUNS_ROOT
-from master_code.plotter import SlamRunPlotter
+from master_code.preprocessing import preprocess_victoria_park_step
 from master_code.slam import FactorGraphSLAM
 
 
@@ -91,6 +91,7 @@ def run_single_experiment(
     config.save(output_dir / "config.yaml")
 
     logger = SlamLogger(output_dir, config.logging)
+    logger.save_reference(gnss=loader.gnss_filtered)
     slam = FactorGraphSLAM(
         config=config,
         logger=logger,
@@ -102,11 +103,16 @@ def run_single_experiment(
     total_steps = count_lidar_steps(loader, max_steps)
 
     t0 = time.perf_counter()
-    for meas in tqdm(
+    for raw_meas in tqdm(
         loader.iterate(max_steps),
         total=total_steps,
         desc=str(spec.run_dir),
     ):
+        meas = preprocess_victoria_park_step(
+            raw_meas,
+            odometry_covariance=config.noise.odom_cov_matrix,
+            max_range=config.sensor.max_range,
+        )
         diagnostics = slam.update(meas)
         steps_diagnostics.append(diagnostics)
         last_step = meas.scan_step
@@ -120,6 +126,8 @@ def run_single_experiment(
     logger.save_metadata(steps_diagnostics[-1], total_time)
 
     if save_plots:
+        from master_code.plotter import SlamRunPlotter
+
         plotter = SlamRunPlotter.from_run(output_dir)
         plotter.plot_all(save=True, show=show_plots)
 

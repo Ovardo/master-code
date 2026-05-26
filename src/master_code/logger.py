@@ -4,6 +4,7 @@ SlamLogger — per-step diagnostics, snapshot saving, and offline reloading.
 Saves to:
     <run_dir>/
         metadata.json          ← scalar metadata
+        reference.npz          ← optional dataset references for plotting
         steps.npz              ← per-step diagnostics (NaN for absent fields)
         associations/
             assoc_00050.npz    ← ragged association diagnostics for selected scans
@@ -163,6 +164,14 @@ class SlamLogger:
         """Save one scan's raw association data to a compressed npz file."""
         path = self.association_dir / f"assoc_{diagnostics.scan_step:05d}.npz"
         np.savez_compressed(path, **diagnostics.as_npz_dict())
+
+    def save_reference(self, **arrays: np.ndarray) -> None:
+        """Save optional dataset reference data for plotting and evaluation."""
+        if not arrays:
+            return
+
+        path = self.run_dir / "reference.npz"
+        np.savez_compressed(path, **arrays)
     
     def save_metadata(
         self,
@@ -219,6 +228,15 @@ class SlamLogger:
     @staticmethod
     def load_association_diagnostics(diagnostics_path: Path | str) -> dict[str, np.ndarray]:
         return SlamLogger._load_npz_dict(diagnostics_path)
+
+    @staticmethod
+    def load_reference(run_path: Path | str) -> dict[str, np.ndarray]:
+        path = Path(run_path) / "reference.npz"
+        if not path.exists():
+            return {}
+
+        with np.load(path, allow_pickle=False) as data:
+            return {key: data[key] for key in data.files}
 
     @staticmethod
     def load_all_snapshots(run_dir: Path | str) -> list[dict[str, np.ndarray]]:  

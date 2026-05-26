@@ -21,3 +21,6 @@ slam-run = "master_code.run:main"
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

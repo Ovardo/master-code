@@ -5,7 +5,6 @@ videos/*
 runs/*
 !videos/.gitkeep
 src/trash/*
-tests/*
 AGENTS.md
 
 # Byte-compiled / optimized / DLL files

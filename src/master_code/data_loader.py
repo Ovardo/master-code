@@ -1,14 +1,16 @@
 """
-Victoria Park dataset loader module. Handles loading from mat-files, 
-unit conversion and synching of Lidar and odometry data
+Dataset loader module. Handles loading from mat-files, unit conversion,
+and dataset-specific synchronization.
 """
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import gtsam
 import numpy as np
 from scipy.io import loadmat
 
+from master_code.measurements import RelativePoseMeasurement, SlamStepInput
 from master_code.paths import DATA_ROOT
 
 
@@ -21,11 +23,14 @@ class WheelOdometry:
 
 
 @dataclass(slots=True)
-class LidarStepInput:
+class RawLidarStepInput:
     odometry: list[WheelOdometry]
     scan: np.ndarray
     scan_time: float
     scan_step: int
+
+
+LidarStepInput = RawLidarStepInput
 
 
 class VictoriaParkLoader:
@@ -121,7 +126,7 @@ class VictoriaParkLoader:
             )
         ]
 
-    def iterate(self, max_steps: int | None = None) -> Iterator[LidarStepInput]:
+    def iterate(self, max_steps: int | None = None) -> Iterator[RawLidarStepInput]:
         """
         Iterate over LiDAR-to-LiDAR steps.
         """
@@ -138,7 +143,7 @@ class VictoriaParkLoader:
 
             odometry = self._odometry_between(t0, t1)
 
-            yield LidarStepInput(
+            yield RawLidarStepInput(
                 odometry=odometry,
                 scan=self.lsr_scans[lidar_idx],
                 scan_time=self.lsr_timestamps[lidar_idx],
@@ -146,7 +151,7 @@ class VictoriaParkLoader:
             )
             scan_step += 1
 
-    def iterate_synced(self, max_steps: int | None = None) -> Iterator[LidarStepInput]:
+    def iterate_synced(self, max_steps: int | None = None) -> Iterator[RawLidarStepInput]:
         """
         Iterate over LiDAR steps snapped to the preceding odometry sample.
 
@@ -191,7 +196,7 @@ class VictoriaParkLoader:
                 )
             ]
 
-            yield LidarStepInput(
+            yield RawLidarStepInput(
                 odometry=odometry,
                 scan=self.lsr_scans[lidar_idx],
                 scan_time=self.lsr_timestamps[lidar_idx],
@@ -227,6 +232,75 @@ class VictoriaParkLoader:
         return np.array(
             [self.gnss_longitude[0], self.gnss_latitude[0], np.deg2rad(36)]
         ) 
+
+
+class SimulatedDataLoader:
+    """Loader for the simulated SLAM dataset with processed measurements."""
+
+    def __init__(self, data_file: Path | None = None):
+        if data_file is None:
+            data_file = DATA_ROOT / "simulatedSLAM.mat"
+
+        raw_data = loadmat(str(data_file))
+        self.measurements = [
+            np.asarray(zk.T, dtype=float).reshape(-1, 2)
+            for zk in raw_data["z"].ravel()
+        ]
+        self.landmarks_gt = np.asarray(raw_data["landmarks"].T, dtype=float)
+        self.odometry = np.asarray(raw_data["odometry"].T, dtype=float)
+        self.poses_gt = np.asarray(raw_data["poseGT"].T, dtype=float)
+
+        if self.odometry.shape[1] != 3:
+            raise ValueError("Simulated odometry must have columns [dx, dy, dtheta].")
+        if len(self.measurements) != len(self.odometry):
+            raise ValueError("Simulated z and odometry must have the same length.")
+        if len(self.poses_gt) != len(self.odometry) + 1:
+            raise ValueError("Simulated poseGT must contain one more pose than odometry.")
+
+    @property
+    def initial_pose(self) -> np.ndarray:
+        return self.poses_gt[0]
+
+    @property
+    def reference(self) -> dict[str, np.ndarray]:
+        return {
+            "poses_gt": self.poses_gt,
+            "landmarks_gt": self.landmarks_gt,
+        }
+
+    def iterate(
+        self,
+        max_steps: int | None = None,
+        *,
+        odometry_covariance: np.ndarray,
+        max_range: float | None = None,
+    ) -> Iterator[SlamStepInput]:
+        # measurements[i] belongs to poses_gt[i]. Since FactorGraphSLAM.update()
+        # first applies odometry[i] to create poses_gt[i + 1], then registers
+        # measurements, odometry[i] must be paired with measurements[i + 1].
+        stop = min(len(self.odometry), len(self.measurements) - 1)
+        if max_steps is not None:
+            stop = min(stop, max_steps)
+
+        covariance = np.asarray(odometry_covariance, dtype=float).reshape(3, 3)
+
+        for scan_step in range(stop):
+            dx, dy, dtheta = self.odometry[scan_step]
+            measurement_index = scan_step + 1
+            measurements = self.measurements[measurement_index]
+
+            if max_range is not None:
+                measurements = measurements[measurements[:, 0] < max_range]
+
+            yield SlamStepInput(
+                odometry=RelativePoseMeasurement(
+                    pose=gtsam.Pose2(float(dx), float(dy), float(dtheta)),
+                    covariance=covariance.copy(),
+                ),
+                measurements=measurements,
+                scan_step=scan_step,
+                scan_time=float(measurement_index),
+            )
 
 
 

@@ -5,7 +5,7 @@ from scipy.stats import chi2
 
 from master_code.association import NIS, individualCompatibility
 from master_code.plotting.thesis_style import thesis_figsize
-from master_code.utils import rotmat2
+from master_code.utils import rotmat2, ssa
 
 
 def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, **kwargs) -> Ellipse:
@@ -50,10 +50,12 @@ def plot_estimate(
     landmarks: np.ndarray | None = None,
     landmarks_cov: np.ndarray | None = None,
     gnss: np.ndarray | None = None,
+    poses_gt: np.ndarray | None = None,
+    landmarks_gt: np.ndarray | None = None,
     ax: plt.Axes | None = None,
     **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Plot the trajectory, landmarks, and optional covariances and gnss."""
+    """Plot the trajectory, landmarks, and optional reference data."""
     
     if ax is None:
         fig, ax = plt.subplots(figsize=(8,8), tight_layout=True)
@@ -68,7 +70,31 @@ def plot_estimate(
     kwargs.setdefault("x_label", "x [m]")
     kwargs.setdefault("y_label", "y [m]")
 
-    if poses is not None:
+    if poses_gt is not None and len(poses_gt) > 0:
+        ax.plot(
+            poses_gt[:, 0],
+            poses_gt[:, 1],
+            color="black",
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.8,
+            label="Ground truth trajectory",
+            zorder=1,
+        )
+
+    if landmarks_gt is not None and len(landmarks_gt) > 0:
+        ax.scatter(
+            landmarks_gt[:, 0],
+            landmarks_gt[:, 1],
+            c="0.25",
+            marker="x",
+            s=18,
+            alpha=0.7,
+            label=f"Ground truth landmarks ({len(landmarks_gt)})",
+            zorder=2,
+        )
+
+    if poses is not None and len(poses) > 0:
         ax.plot(poses[:, 0], poses[:, 1], color="steelblue", label=kwargs.get("traj_label"), zorder=4)
         ax.scatter(poses[0, 0], poses[0, 1], color="green", s=50, zorder=5, label="Start", marker="o", facecolors="white", edgecolors="green")
         ax.scatter(poses[-1, 0], poses[-1, 1], color="red", s=50, zorder=5, label="End", marker="s", facecolors="white", edgecolors="red")
@@ -76,13 +102,13 @@ def plot_estimate(
         if poses_cov is not None:
             draw_pose_covariances(ax, poses, poses_cov, cov_stride=poses_cov_stride, zorder=2)
 
-    if landmarks is not None:
+    if landmarks is not None and len(landmarks) > 0:
         ax.scatter(landmarks[:, 0], landmarks[:, 1], c="tomato", marker=".", label=f"Landmarks ({len(landmarks)})", zorder=3)
 
         if landmarks_cov is not None:
             draw_landmark_covariances(ax, landmarks, landmarks_cov, alpha=0.3, zorder=3)
 
-    if gnss is not None:
+    if gnss is not None and len(gnss) > 0:
         ax.scatter(gnss[:, 1], gnss[:, 2], c="gold", marker=".", alpha=0.6, label="GNSS", zorder=1)
 
     ax.set_title(kwargs["title"])
@@ -408,6 +434,50 @@ def plot_position_nis(
     ax.legend()
 
     return fig, ax
+
+
+def plot_trajectory_error(
+    poses: np.ndarray,
+    poses_gt: np.ndarray,
+    axes: np.ndarray | None = None,
+) -> tuple[plt.Figure, np.ndarray]:
+    """Plot estimated trajectory error against simulated ground truth."""
+    poses = np.asarray(poses, dtype=float).reshape(-1, 3)
+    poses_gt = np.asarray(poses_gt, dtype=float).reshape(-1, 3)
+
+    if len(poses_gt) >= len(poses) + 1:
+        poses_gt = poses_gt[1:len(poses) + 1]
+
+    n = min(len(poses), len(poses_gt))
+    if n == 0:
+        raise ValueError("At least one estimated and ground-truth pose is required.")
+
+    poses = poses[:n]
+    poses_gt = poses_gt[:n]
+    steps = np.arange(n)
+
+    position_error = np.linalg.norm(poses[:, :2] - poses_gt[:, :2], axis=1)
+    heading_error = ssa(poses[:, 2] - poses_gt[:, 2])
+    position_rmse = float(np.sqrt(np.mean(position_error**2)))
+    heading_rmse_deg = float(np.rad2deg(np.sqrt(np.mean(heading_error**2))))
+
+    if axes is None:
+        fig, axes = plt.subplots(2, 1, figsize=(8, 4), sharex=True, tight_layout=True)
+    else:
+        fig = axes[0].figure
+
+    axes[0].plot(steps, position_error, color="steelblue", lw=0.9)
+    axes[0].set_ylabel("Position error [m]")
+    axes[0].set_title(f"Trajectory error | position RMSE = {position_rmse:.2f} m")
+    axes[0].grid(True, lw=0.4)
+
+    axes[1].plot(steps, np.rad2deg(heading_error), color="tomato", lw=0.9)
+    axes[1].set_xlabel("Scan step")
+    axes[1].set_ylabel("Heading error [deg]")
+    axes[1].set_title(f"Heading RMSE = {heading_rmse_deg:.2f} deg")
+    axes[1].grid(True, lw=0.4)
+
+    return fig, axes
 
 
 def nearest_indices(query_times: np.ndarray, reference_times: np.ndarray) -> np.ndarray:

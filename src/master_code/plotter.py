@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from master_code.config import SlamConfig
-from master_code.data_loader import VictoriaParkLoader
 from master_code.logger import SlamLogger
 from master_code.plotting.plotting_funcs import (
     plot_error,
@@ -20,6 +19,7 @@ from master_code.plotting.plotting_funcs import (
     plot_timing_breakdown,
     plot_timing_over_time,
     plot_timing_vs_landmarks,
+    plot_trajectory_error,
 )
 from master_code.plotting.thesis_style import apply_thesis_style
 
@@ -32,6 +32,7 @@ class SlamRunPlotter:
     snapshots: list[dict[str, np.ndarray]]
     association: list[dict[str, np.ndarray]]
     config: SlamConfig
+    reference: dict[str, np.ndarray]
     
     @classmethod
     def from_run(cls, run_dir: Path | str) -> SlamRunPlotter:
@@ -40,8 +41,16 @@ class SlamRunPlotter:
         snapshots   = SlamLogger.load_all_snapshots(run_path)
         association = SlamLogger.load_all_association_diagnostics(run_path)
         config      = SlamConfig.load(run_path / "config.yaml")
+        reference   = SlamLogger.load_reference(run_path)
         
-        return cls(run_dir=run_dir, steps=steps, snapshots=snapshots, association=association, config=config)
+        return cls(
+            run_dir=run_path,
+            steps=steps,
+            snapshots=snapshots,
+            association=association,
+            config=config,
+            reference=reference,
+        )
     
     @property
     def figure_dir(self) -> Path:
@@ -68,7 +77,9 @@ class SlamRunPlotter:
             poses_cov     = self.snapshots[-1].get("poses_covariance"),
             landmarks     = self.snapshots[-1].get("landmarks"),
             landmarks_cov = self.snapshots[-1].get("landmarks_covariance"), 
-            gnss = VictoriaParkLoader().gnss_filtered,
+            gnss          = self.reference.get("gnss"),
+            poses_gt      = self.reference.get("poses_gt"),
+            landmarks_gt  = self.reference.get("landmarks_gt"),
             poses_cov_stride = 20,
             **kwargs
         )
@@ -135,16 +146,34 @@ class SlamRunPlotter:
         )
         return fig, axes
 
-    def plot_position_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+    def plot_position_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
+        gnss = self.reference.get("gnss")
+        if gnss is None:
+            print("No GNSS reference found, skipping position NIS plot.")
+            return None
+
         fig, ax = plot_position_nis(
             ax = ax,
-            gnss=VictoriaParkLoader().gnss_filtered,
+            gnss=gnss,
             poses=self.snapshots[-1].get("poses"),
             poses_covs=self.snapshots[-1].get("poses_covariance"),
             poses_times=self.steps.get("scan_time"),
             
         )
         return fig, ax
+
+    def plot_trajectory_error(self, axes = None) -> tuple[plt.Figure, np.ndarray] | None:
+        poses_gt = self.reference.get("poses_gt")
+        if poses_gt is None:
+            print("No ground-truth trajectory found, skipping trajectory error plot.")
+            return None
+
+        fig, axes = plot_trajectory_error(
+            axes=axes,
+            poses=self.snapshots[-1].get("poses"),
+            poses_gt=poses_gt,
+        )
+        return fig, axes
     
     def plot_landmark_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
         if not self.association:
@@ -184,6 +213,7 @@ class SlamRunPlotter:
         self._finish_figure( self.plot_pose_covariance_evolution(), name="pose_covariance_evolution", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_landmark_nis(), name="landmark_nis", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_position_nis(), name="position_nis", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_trajectory_error(), name="trajectory_error", save=save, show=show, fmt="pdf" )
         plt.show()
 
 

@@ -8,10 +8,9 @@ from gtsam.symbol_shorthand import L, X
 
 from master_code.association import get_associator
 from master_code.config import SlamConfig
-from master_code.data_loader import LidarStepInput, WheelOdometry
 from master_code.div.utils_gtsam import reorder_covariance_naive
 from master_code.logger import SlamLogger, AssociationDiagnostics, StepDiagnostics
-from master_code.preprocessing import detect_trees, relative_pose
+from master_code.measurements import RelativePoseMeasurement, SlamStepInput
 from master_code.sensor import get_sensor_model
 from master_code.tentative import TentativeLandmark, get_tentative_landmark_manager
 from master_code.utils import pose2_to_array
@@ -51,9 +50,6 @@ class FactorGraphSLAM:
              config.noise.sigma_range]
         )
     
-        self.Q_input  = config.noise.control_input_cov_matrix
-        self.Q_output = config.noise.odom_cov_matrix
-
         # State tracking
         self.poses_keys = list()  # list of pose keys in the factor graph
         self.landmark_keys = list()  # list of landmark keys in the factor graph
@@ -94,7 +90,7 @@ class FactorGraphSLAM:
 
         self.optimize()  
 
-    def update(self, data: LidarStepInput):
+    def update(self, data: SlamStepInput):
         # Clear diagnostic info from previous step
         self.step_diagnostics.clear()
 
@@ -102,7 +98,7 @@ class FactorGraphSLAM:
         
         # Main SLAM update steps
         T_pred = self.register_odometry(data.odometry)
-        self.register_scan(data.scan, T_pred, data.scan_step, data.scan_time)
+        self.register_measurements(data.measurements, T_pred, data.scan_step, data.scan_time)
 
         # Diagnostics 
         self.step_diagnostics.duration_update = time.perf_counter() - _t0
@@ -136,23 +132,20 @@ class FactorGraphSLAM:
 
         return result
 
-    def register_odometry(self, odometry: list[WheelOdometry]) -> gtsam.Pose2:
-        T_odom, T_odom_cov = self.preintegrate_odometry(odometry)
-        T_kp1 = self.add_relative_pose_factor(T_odom, T_odom_cov)
+    def register_odometry(self, odometry: RelativePoseMeasurement) -> gtsam.Pose2:
+        T_kp1 = self.add_relative_pose_factor(odometry.pose, odometry.covariance)
         self.optimize()
         return T_kp1
     
     
-    def register_scan(
+    def register_measurements(
         self,
-        scan: np.ndarray,
+        measurements: np.ndarray,
         T_k: gtsam.Pose2,
         scan_step: int,
         scan_time: float,
     ) -> None:
-        t0 = time.perf_counter()
-        z = self.detect_measurements(scan)
-        self.step_diagnostics.duration_scan_processing = time.perf_counter() - t0
+        z = np.asarray(measurements, dtype=float).reshape(-1, 2)
 
         t0 = time.perf_counter()
         local_lm, local_lm_keys = self.get_local_landmarks(T_k)
@@ -177,22 +170,6 @@ class FactorGraphSLAM:
         self.optimize()
 
         self.step_diagnostics.num_local_landmarks = len(local_lm_keys)
-
-    def preintegrate_odometry(self, wheel_odometry: list[WheelOdometry]) -> tuple[gtsam.Pose2, np.ndarray]:
-        T_odom     = gtsam.Pose2.Identity()
-        T_odom_cov = np.zeros((3, 3))
-        
-        for odo in wheel_odometry:
-            T_delta, J_delta_u = relative_pose(odo.velocity, odo.steering, odo.dt)
-            T_delta_cov = odo.dt * self.Q_output
-
-            H1 = np.zeros((3, 3), order='F')
-            H2 = np.zeros((3, 3), order='F')
-        
-            T_odom     = T_odom.compose(T_delta, H1, H2)
-            T_odom_cov = H1 @ T_odom_cov @ H1.T + H2 @ T_delta_cov @ H2.T
-        
-        return T_odom, T_odom_cov
     
 
     def add_relative_pose_factor(self, T_odom: gtsam.Pose2, T_odom_cov: np.ndarray):
@@ -219,11 +196,6 @@ class FactorGraphSLAM:
 
         return T_kp1
     
-    def detect_measurements(self, scan: np.ndarray) -> np.ndarray:
-        z = detect_trees(scan)
-        z = z[z[:, 0] < self.cfg.sensor.max_range]
-        return z
-
     def associate_measurements(
         self,
         z: np.ndarray,

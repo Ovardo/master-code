@@ -12,7 +12,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from master_code.data_loader import SimulatedDataLoader
+from master_code.loaders.victoria_park import SimulatedDataLoader
 from master_code.plotting.plotting_funcs import plot_estimate
 
 

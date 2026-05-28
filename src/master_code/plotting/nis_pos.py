@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import chi2
 
 from master_code.plotting.thesis_style import thesis_figsize, save_figure, apply_thesis_style
-from master_code.data_loader import VictoriaParkLoader 
+from master_code.loaders.victoria_park import VictoriaParkLoader 
 from master_code.plotting.plotting_funcs import plot_position_nis
 
 

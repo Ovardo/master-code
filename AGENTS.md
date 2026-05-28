@@ -5,7 +5,7 @@ Use the python enviroment at ".venv" for running code
 
 ## Project overview
 This repository contains the codebase for my master thesis project on SLAM. The main focus is on implementing a factor graph-based SLAM system using GTSAM, with a custom data pipeline and association logic. The code is organized into several modules:
-- `src/slam.py`: Contains the main SLAM implementation, including the `FactorGraphSLAM` class which manages the factor graph and the main SLAM loop.
+- `src/slam.py`: Contains the main SLAM implementation, including the `GraphSLAM` class which manages the factor graph and the main SLAM loop.
 - `src/run.py`: The entry point for running the SLAM system. It sets up the configuration, loads the data, and executes the main loop while logging results.
 - `src/data_loader.py`: Contains the `VictoriaParkLoader` class which handles loading and synchronization of the Victoria Park dataset.
 - `src/logger.py`: Contains the `SlamLogger` class which manages loading and saving of SLAM results and snapshots to disk.

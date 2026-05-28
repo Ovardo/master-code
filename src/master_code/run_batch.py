@@ -10,11 +10,11 @@ from typing import Sequence
 from tqdm import tqdm
 
 from master_code.config import SlamConfig
-from master_code.data_loader import VictoriaParkLoader
+from master_code.loaders.victoria_park import VictoriaParkLoader
 from master_code.logger import SlamLogger, StepDiagnostics
 from master_code.paths import RUNS_ROOT
 from master_code.preprocessing import preprocess_victoria_park_step
-from master_code.slam import FactorGraphSLAM
+from master_code.slam import GraphSLAM
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def run_single_experiment(
 
     logger = SlamLogger(output_dir, config.logging)
     logger.save_reference(gnss=loader.gnss_filtered)
-    slam = FactorGraphSLAM(
+    slam = GraphSLAM(
         config=config,
         logger=logger,
         initial_pose=loader.initial_pose,

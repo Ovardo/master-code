@@ -9,17 +9,15 @@ from gtsam.symbol_shorthand import L, X
 from master_code.association import get_associator
 from master_code.config import SlamConfig
 from master_code.div.utils_gtsam import reorder_covariance_naive
-from master_code.logger import SlamLogger, AssociationDiagnostics, StepDiagnostics
+from master_code.logger import AssociationDiagnostics, SlamLogger, StepDiagnostics
 from master_code.measurements import RelativePoseMeasurement, SlamStepInput
 from master_code.sensor import get_sensor_model
 from master_code.tentative import TentativeLandmark, get_tentative_landmark_manager
 from master_code.utils import pose2_to_array
 
-
-
 # TODO: visualize display(graphviz.Source(isam.dot()))
 
-class FactorGraphSLAM:
+class GraphSLAM:
     """Main SLAM estimator using factor graph."""
 
     def __init__(
@@ -119,6 +117,30 @@ class FactorGraphSLAM:
             )
         
         return self.step_diagnostics.copy()
+    
+    def add_odometry_factor(self, k, delta_T, delta_cov):
+        key_k   = X(k)
+        key_kp1 = X(k + 1)
+        self.poses_keys.append(key_kp1)
+
+        # Add initial guess for new pose
+        T_k = self.isam2.calculateEstimatePose2(key_k)
+        T_kp1 = T_k.compose(delta_T)
+        self.new_values.insert(key_kp1, T_kp1)
+
+        # Convert integrated noise to noise model 
+        cov = gtsam.noiseModel.Gaussian.Covariance(delta_cov)
+
+        self.new_factors.add(
+            gtsam.BetweenFactorPose2(
+                key1=key_k, 
+                key2=key_kp1, 
+                relativePose=delta_T,
+                noiseModel=cov
+            )
+        )
+
+        return T_kp1
     
     def optimize(self) -> gtsam.ISAM2Result:
         _t0 = time.perf_counter()
@@ -259,7 +281,7 @@ class FactorGraphSLAM:
         lm_unassociated = self.sensor.h_inverse(T_k, z_unassociated)
 
         self.t0 = time.perf_counter()
-        confirmed_tentatives = self.tentative.process_unassociated_measurements(
+        confirmed_tentatives = self.tentative.add_tentative_landmarks(
             current_step=self.num_poses,
             unassociated_measurements=z_unassociated,
             new_tentative_landmarks=lm_unassociated,

@@ -1,6 +1,6 @@
 # TODO
 
-Active backlog for the thesis codebase. Deprecated or already completed items from `README.md` have been removed.
+Active backlog for the thesis codebase.
 
 ## Simulation And Data Pipeline
 
@@ -13,10 +13,7 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 
 ## Association And Landmark Management
 
-- [ ] Add measurements function jacobian caluclation to gtsam python wrapper
-- [ ] Use `sensor_offset` consistently during prediction, association, and landmark initialization to avoid duplicate landmarks from frame mismatch.
-- [ ] Decide how ambiguous associations (`-2`) should be handled in `FactorGraphSLAM` instead of silently ignoring them.
-- [ ] Make the ambiguous-association threshold configurable instead of hard-coded.
+- [x] Add measurements function jacobian caluclation to gtsam python wrapper
 - [ ] Add a cleaner fallback path when no predicted landmarks survive gating.
 
 
@@ -45,13 +42,12 @@ Active backlog for the thesis codebase. Deprecated or already completed items fr
 
 ## Validation And Documentation
 
-- [ ] Add regression tests for JCBB/ML association, tentative landmark promotion, and `isam2` vs `batch` consistency.
 - [ ] Document setup requirements more clearly, especially the `gtsam` dependency and the main entry-point scripts.
 - [ ] Replace the temporary patched-GTSAM setup with prebuilt `gtsam-ttk4250` wheels once the custom wrapper API is stable.
 - [ ] Decide whether assignment support on Windows means native wheels or WSL2 only.
-- [ ] Refresh `src/toy_example.py` and the exploratory scripts in `src/div/` so they match the current config and data model.
 - [ ] pip install gtsam when bayesTree jointMarginalCovariance feature is in stable release, and remove the manual installation instructions.
 - [ ] Add better timing and performance benchmarks/profiling for the main SLAM loop, especially the association step and `isam2` updates.
 
 
-- [ ] Remove docs and packaging folder
+- [x] Remove docs and packaging folder
+- [ ] Make it not possible to 

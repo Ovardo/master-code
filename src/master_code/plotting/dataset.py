@@ -5,7 +5,7 @@ from matplotlib.patches import Rectangle
 from matplotlib.widgets import CheckButtons
 
 
-from master_code.data_loader import VictoriaParkLoader, find_gnss_outliers
+from master_code.loaders.victoria_park import VictoriaParkLoader, find_gnss_outliers
 from master_code.preprocessing import detect_trees
 from master_code.paths import FIGURES_ROOT
 

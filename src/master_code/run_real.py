@@ -11,24 +11,24 @@ from tqdm import tqdm
 
 from master_code.association import JCBB_association
 from master_code.config import SlamConfig
-from master_code.loaders.simulated import SimulatedDataLoader
-from master_code.logger import SlamLogger, StepDiagnostics, AssociationDiagnostics
+from master_code.loaders.victoria_park import VictoriaParkLoader
+from master_code.logger import SlamLogger, StepDiagnostics
 from master_code.paths import RUNS_ROOT
 from master_code.plotter import SlamRunPlotter
+from master_code.preprocessing import detect_trees, preintegrate, relative_pose
 from master_code.tentative import get_tentative_landmark_manager
 from master_code.utils import make_psd, pose2_to_array, reorder_covariance_naive
 
-# from master_code.slam import GraphSLAM
 
 def main() -> None:
     NUM_STEPS   = 7300
-    OUTPUT_DIR  = RUNS_ROOT / "sim" / datetime.now().strftime("%Y%m%d_%H%M%S") 
-    CONFIG_NAME = "simulated.yaml"
+    OUTPUT_DIR  = RUNS_ROOT / "real" / datetime.now().strftime("%Y%m%d_%H%M%S") 
+    CONFIG_NAME = "vp1.yaml"
 
     # ======= Load configuration ========
     config = SlamConfig.load(CONFIG_NAME)
     logger = SlamLogger(OUTPUT_DIR, config.logging)
-    loader = SimulatedDataLoader()
+    loader = VictoriaParkLoader()
     num_steps = min(loader.max_steps, NUM_STEPS) 
 
     # Copy config to output_dir for reproducibility 
@@ -50,9 +50,9 @@ def main() -> None:
     
     # Noise models 
     prior_noise = gtsam.noiseModel.Diagonal.Sigmas([
-        config.noise.sigma_odom_x, 
-        config.noise.sigma_odom_y, 
-        config.noise.sigma_odom_yaw_rad
+        config.noise.sigma_init_pose_x, 
+        config.noise.sigma_init_pose_y, 
+        config.noise.sigma_init_pose_yaw_rad
     ])
     
     # Note that GTSAM expects bearing first!
@@ -67,10 +67,18 @@ def main() -> None:
 
     # ======= Add prior factor ========
     prior_mean = gtsam.Pose2(*loader.initial_pose)
-    new_factors.add(gtsam.PriorFactorPose2(X(0), prior_mean, prior_noise))
-    
+   
+
     new_values.insert(X(0), prior_mean)
     poses_keys.append(X(0))
+
+    new_factors.add(
+        gtsam.PriorFactorPose2(
+            key=X(0), 
+            prior=prior_mean, 
+            noiseModel=prior_noise
+        )
+    )
 
     # ======= Update ISAM2 with anchoring factor =======
     isam2.update(new_factors, new_values)
@@ -83,31 +91,41 @@ def main() -> None:
     for k, meas in tqdm(enumerate(loader.iterate(num_steps)), total=num_steps, desc="SLAM"):
         
         # ======= Raw measurements ========
-        delta_T = gtsam.Pose2(*meas['relative_pose'])   
-        delta_T_cov = config.noise.odom_cov_matrix
+        wheel_odometry = meas.odometry
+        scan = meas.scan 
+        
+        # ======= Preprocessing and preintegratin of wheel odometry ========
+        delta_odo = []
+        delta_odo_covs = []
+        for odo in wheel_odometry:
+            delta = relative_pose(odo.velocity, odo.steering, odo.dt)
+            delta_odo.append(delta)
+            delta_cov = config.noise.odom_cov_matrix * odo.dt
+            delta_odo_covs.append(delta_cov)
+
+        delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
         
         # ======= Add odometry factor ========
         key_k   = X(k)
         key_kp1 = X(k + 1)
         poses_keys.append(key_kp1)
 
-        # Convert integrated noise to noise model 
-        delta_noise = gtsam.noiseModel.Gaussian.Covariance(delta_T_cov)
-
-        # Add factor
-        new_factors.add(
-            gtsam.BetweenFactorPose2(
-                key1=key_k, 
-                key2=key_kp1, 
-                relativePose=delta_T, 
-                noiseModel=delta_noise
-            )
-        )
-
         # Add initial guess for new pose
         T_k = isam2.calculateEstimatePose2(key_k)
         T_kp1 = T_k.compose(delta_T)
         new_values.insert(key_kp1, T_kp1)
+
+        # Convert integrated noise to noise model 
+        delta_cov_model = gtsam.noiseModel.Gaussian.Covariance(delta_cov)
+
+        new_factors.add(
+            gtsam.BetweenFactorPose2(
+                key1=key_k, 
+                key2=key_kp1, 
+                relativePose=delta_T,
+                noiseModel=delta_cov_model
+            )
+        )
         
         # ======= Update iSAM2 with predicted pose =======
         isam2.update(new_factors, new_values)
@@ -116,10 +134,8 @@ def main() -> None:
 
         
         # ======= Process lidar scan ========
-        # measurements = detect_trees(scan)
-        # measurements = measurements[measurements[:, 0] < config.sensor.max_range] # Filter by max range
-        measurements = meas['measurements']
-
+        measurements = detect_trees(scan)
+        measurements = measurements[measurements[:, 0] < config.sensor.max_range] # Filter by max range
 
         # ======= Extract local predicted measurements and jacobians =========
         local_landmarks = []
@@ -229,41 +245,22 @@ def main() -> None:
                 )
      
         
-        
         # ======= Update ISAM2 with measurement factors and values ========
         isam2.update(new_factors, new_values)
         new_factors = gtsam.NonlinearFactorGraph()
         new_values = gtsam.Values()
         
         # ======= Logging ========
-        diagnostics_steps.append(
-            StepDiagnostics(
-                scan_step = k+1,
-                scan_time = meas['scan_time'],
-                num_landmarks = len(landmarks_keys),    
-                num_local_landmarks = len(local_landmarks_keys),
-                num_associated_measurement = np.sum(is_associated),
-                num_unassociated_measurement = np.sum(~is_associated)
-            )
+        diagnostics = StepDiagnostics(
+            scan_step = k+1,
+            scan_time = meas.scan_time,
+            num_landmarks = len(landmarks_keys),    
+            num_local_landmarks = len(local_landmarks_keys),
+            num_associated_measurement = np.sum(is_associated),
+            num_unassociated_measurement = np.sum(~is_associated)
         )
-
-        if logger.should_save_association_diagnostics(k+1):
-            logger.save_association_diagnostics(
-                AssociationDiagnostics(
-                    scan_step=k+1,
-                    scan_time=meas['scan_time'],
-                    pose_index=k+1,
-                    pose=pose2_to_array(T_kp1),
-                    measurements=measurements,
-                    predicted_measurements=local_predicted_measurements,
-                    association=association,
-                    local_landmarks=local_landmarks,
-                    innovation_covariance=S
-                )
-            )
-  
-
-    
+        
+        diagnostics_steps.append(diagnostics)
         
     total_time = time.perf_counter() - t0
 
@@ -287,11 +284,11 @@ def main() -> None:
         'landmarks': get_landmarks(),
         'landmarks_covariance': get_landmarks_covariance(),
     }
-
+    
     # ======= Save result to output dir ========
     logger.save_snapshot(k, snapshot, final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
-    logger.save_metadata(diagnostics_steps[-1], total_time)
+    # logger.save_metadata(diagnostics_steps[-1], total_time)
 
     # ======= Produce, plot and save figures ========
     plotter = SlamRunPlotter.from_run(OUTPUT_DIR)
@@ -301,3 +298,38 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
+
+
+# @dataclass
+# class SlamState:
+#     isam2: gtsam.ISAM2
+#     new_factors: gtsam.NonlinearFactorGraph
+#     new_values: gtsam.Values
+#     pose_keys: list[int]
+#     landmark_keys: list[int]
+
+#     def optimize(self) -> None:
+#         self.isam2.update(self.new_factors, self.new_values)
+#         self.new_factors = gtsam.NonlinearFactorGraph()
+#         self.new_values = gtsam.Values()
+
+#     def get_poses(self) -> np.ndarray:
+#         return np.array([pose2_to_array(self.isam2.calculateEstimatePose2(key)) for key in self.pose_keys])
+
+#     def get_poses_covariance(self) -> np.ndarray:
+#         return np.stack([self.isam2.marginalCovariance(k) for k in self.pose_keys], axis=0)
+
+#     def get_landmarks(self) -> np.ndarray:
+#         return np.array([self.isam2.calculateEstimatePoint2(key) for key in self.landmark_keys])
+
+#     def get_landmarks_covariance(self) -> np.ndarray:
+#         covariances = [self.isam2.marginalCovariance(key) for key in self.landmark_keys]
+#         return np.stack(covariances, axis=0) if covariances else np.array([])
+
+#     def get_snapshot(self) -> dict:
+#         return dict(
+#             'poses': self.get_poses(),
+#             'poses_covariance': self.get_poses_covariance(),
+#             'landmarks': self.get_landmarks(),
+#             'landmarks_covariance': self.get_landmarks_covariance(),
+#         )

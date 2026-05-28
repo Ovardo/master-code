@@ -7,19 +7,21 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from master_code.loaders.victoria_park import VictoriaParkLoader
+from master_code.loaders.simulated import SimulatedDataLoader
 from master_code.config import SlamConfig
 from master_code.logger import SlamLogger
 from master_code.plotting.plotting_funcs import (
-    plot_error,
     plot_estimate,
+    plot_pose_diagnostics,
+    plot_pose_nees,
+    plot_position_nis,
     plot_landmark_growth,
     plot_landmark_nis,
-    plot_pose_covariance_evolution,
-    plot_position_nis,
-    plot_timing_breakdown,
-    plot_timing_over_time,
+    plot_landmarks_and_timing,
     plot_timing_vs_landmarks,
-    plot_trajectory_error,
+    plot_cumulative_timing,
+    plot_per_step_timing,
 )
 from master_code.plotting.thesis_style import apply_thesis_style
 
@@ -32,24 +34,38 @@ class SlamRunPlotter:
     snapshots: list[dict[str, np.ndarray]]
     association: list[dict[str, np.ndarray]]
     config: SlamConfig
-    reference: dict[str, np.ndarray]
+    gnss: np.ndarray | None = None # Inject if real-run
+    gt_poses: np.ndarray | None = None # Inject if sim-run
+    gt_landmarks: np.ndarray | None = None # Inject if sim-run
+
     
     @classmethod
     def from_run(cls, run_dir: Path | str) -> SlamRunPlotter:
-        run_path = Path(run_dir)
-        steps       = SlamLogger.load_steps(run_path)
-        snapshots   = SlamLogger.load_all_snapshots(run_path)
-        association = SlamLogger.load_all_association_diagnostics(run_path)
-        config      = SlamConfig.load(run_path / "config.yaml")
-        reference   = SlamLogger.load_reference(run_path)
         
+        run_path = Path(run_dir)
+        run_type = run_path.parent.name
+        
+        gnss = None
+        gt_poses = None
+        gt_landmarks = None
+
+        if run_type == "sim":
+            loader = SimulatedDataLoader()
+            gt_poses = loader.poses_gt
+            gt_landmarks = loader.landmarks_gt
+        elif run_type == "real":
+            loader = VictoriaParkLoader()
+            gnss = loader.gnss_filtered
+       
         return cls(
-            run_dir=run_path,
-            steps=steps,
-            snapshots=snapshots,
-            association=association,
-            config=config,
-            reference=reference,
+            run_dir      = run_path,
+            steps        = SlamLogger.load_steps(run_path),
+            snapshots    = SlamLogger.load_all_snapshots(run_path),
+            association  = SlamLogger.load_all_association_diagnostics(run_path),
+            config       = SlamConfig.load(run_path / "config.yaml"),
+            gnss         = gnss,
+            gt_poses     = gt_poses,
+            gt_landmarks = gt_landmarks,
         )
     
     @property
@@ -77,32 +93,40 @@ class SlamRunPlotter:
             poses_cov     = self.snapshots[-1].get("poses_covariance"),
             landmarks     = self.snapshots[-1].get("landmarks"),
             landmarks_cov = self.snapshots[-1].get("landmarks_covariance"), 
-            gnss          = self.reference.get("gnss"),
-            poses_gt      = self.reference.get("poses_gt"),
-            landmarks_gt  = self.reference.get("landmarks_gt"),
+            gnss          = self.gnss,
+            poses_gt      = self.gt_poses,
+            landmarks_gt  = self.gt_landmarks,
             poses_cov_stride = 20,
             **kwargs
         )
         return fig, ax
         
-    def plot_timing_breakdown(self, axes = None) -> tuple[plt.Figure, plt.Axes]:
-        fig, axes = plot_timing_breakdown(
-            axes    = axes,
+    def plot_cumulative_timing(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+        fig, axes = plot_cumulative_timing(
+            ax      = ax,
             steps   = self.steps.get("scan_step"),
             t_cov   = self.steps.get("duration_covariance_extraction"),
             t_assoc = self.steps.get("duration_association"),
             t_opt   = self.steps.get("duration_optimization"),
             t_lmap  = self.steps.get("duration_local_landmark_extraction"),
-            t_total = self.steps.get("duration_update"),
-            # t_tent  = self.steps.get("duration_tentative_processing"),
-            # t_inno  = self.steps.get("duration_innovation_covariance"),
-            # t_scan  = self.steps.get("duration_scan_processing"),
-            
+            t_total = self.steps.get("duration_update"),         
         )
         return fig, axes
     
-    def plot_timing_over_time(self, axes = None) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
-        fig, axes = plot_timing_over_time(
+    def plot_per_step_timing(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
+        fig, axes = plot_per_step_timing(
+            ax      = ax,
+            steps   = self.steps.get("scan_step"),
+            t_cov   = self.steps.get("duration_covariance_extraction"),
+            t_assoc = self.steps.get("duration_association"),
+            t_opt   = self.steps.get("duration_optimization"),
+            t_lmap  = self.steps.get("duration_local_landmark_extraction"),
+            t_total = self.steps.get("duration_update"),         
+        )
+        return fig, axes
+    
+    def plot_landmarks_and_timing(self, axes = None) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
+        fig, axes = plot_landmarks_and_timing(
             axes    = axes,
             steps   = self.steps.get("scan_step"),
             t_cov   = self.steps.get("duration_covariance_extraction"),
@@ -127,54 +151,46 @@ class SlamRunPlotter:
         )
         return fig, ax
     
-    def plot_error_over_time(self, ax = None, **kwargs) -> tuple[plt.Figure, plt.Axes]:
-        fig, ax = plot_error(
-            ax         = ax,
-            scan_steps = self.steps.get("scan_step"),
-            error      = self.steps.get("factor_graph_error"),
-            n_factors  = self.steps.get("num_factors"),
-            **kwargs,
-        )
-        return fig, ax
-
-    def plot_pose_covariance_evolution(self, axes = None) -> tuple[plt.Figure, np.ndarray]:
-        fig, axes = plot_pose_covariance_evolution(
+    def plot_pose_diagnostics(self, axes = None) -> tuple[plt.Figure, np.ndarray]:
+        fig, axes = plot_pose_diagnostics(
             axes = axes,
-            steps = self.steps.get("scan_step"),
-            covs = self.snapshots[-1].get("poses_covariance"),
             poses = self.snapshots[-1].get("poses"),
+            poses_covs = self.snapshots[-1].get("poses_covariance"),
+            poses_gt = self.gt_poses,
+            cov_frame = 'world',
+        )
+        return fig, axes
+    
+    
+    def plot_pose_nees(self, axes = None) -> tuple[plt.Figure, plt.Axes] | None:
+        if self.gt_poses is None:
+            print("No ground truth poses found, skipping NEES plot.")
+            return None
+        
+        fig, axes = plot_pose_nees(
+            axes = axes,
+            poses = self.snapshots[-1].get("poses"),
+            poses_covs = self.snapshots[-1].get("poses_covariance"),
+            poses_gt = self.gt_poses,
         )
         return fig, axes
 
+
     def plot_position_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
-        gnss = self.reference.get("gnss")
-        if gnss is None:
+        if self.gnss is None:
             print("No GNSS reference found, skipping position NIS plot.")
             return None
 
         fig, ax = plot_position_nis(
-            ax = ax,
-            gnss=gnss,
-            poses=self.snapshots[-1].get("poses"),
-            poses_covs=self.snapshots[-1].get("poses_covariance"),
-            poses_times=self.steps.get("scan_time"),
-            
+            ax          = ax,
+            gnss        = self.gnss,
+            poses       = self.snapshots[-1].get("poses"),
+            poses_covs  = self.snapshots[-1].get("poses_covariance"),
+            poses_times = self.steps.get("scan_time"),
         )
+
         return fig, ax
 
-    def plot_trajectory_error(self, axes = None) -> tuple[plt.Figure, np.ndarray] | None:
-        poses_gt = self.reference.get("poses_gt")
-        if poses_gt is None:
-            print("No ground-truth trajectory found, skipping trajectory error plot.")
-            return None
-
-        fig, axes = plot_trajectory_error(
-            axes=axes,
-            poses=self.snapshots[-1].get("poses"),
-            poses_gt=poses_gt,
-        )
-        return fig, axes
-    
     def plot_landmark_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
         if not self.association:
             print("No association diagnostics found, skipping NIS plot.")
@@ -182,10 +198,9 @@ class SlamRunPlotter:
         
         fig, ax = plot_landmark_nis(
             diagnostics=self.association,
-            alpha_individual=self.config.association.alpha_individual,
-            alpha_joint=self.config.association.alpha_joint,
         )
         return fig, ax
+    
     
     # def plot_association(self, save: bool = True, fmt: str = "pdf") -> None:
     #     if not self.association:
@@ -205,19 +220,20 @@ class SlamRunPlotter:
     
     def plot_all(self, save: bool = True, show: bool = True):
         self._finish_figure( self.plot_final_snapshot(), name="final_snapshot", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_timing_breakdown(), name="timing_breakdown", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_timing_over_time(), name="timing_over_time", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_timing_vs_landmarks(), name="timing_vs_landmarks", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_landmark_growth(), name="landmark_growth", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_error_over_time(), name="error_over_time", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_pose_covariance_evolution(), name="pose_covariance_evolution", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_pose_diagnostics(), name="pose_diagnostics", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_pose_nees(), name="pose_nees", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_landmark_nis(), name="landmark_nis", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_position_nis(), name="position_nis", save=save, show=show, fmt="pdf" )
-        self._finish_figure( self.plot_trajectory_error(), name="trajectory_error", save=save, show=show, fmt="pdf" )
+        # self._finish_figure( self.plot_cumulative_timing(), name="timing_breakdown", save=save, show=show, fmt="pdf" )
+        # self._finish_figure( self.plot_per_step_timing(), name="timing_over_time", save=save, show=show, fmt="pdf" )
+        # self._finish_figure( self.plot_timing_vs_landmarks(), name="timing_vs_landmarks", save=save, show=show, fmt="pdf" )
+        # self._finish_figure( self.plot_landmark_growth(), name="landmark_growth", save=save, show=show, fmt="pdf" )
         plt.show()
 
 
 def main() -> None:
+    apply_thesis_style()
+    
     parser = argparse.ArgumentParser(description="Plot a saved SLAM run.")
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--fmt", default="pdf", choices=["pdf", "png", "svg"])
@@ -230,10 +246,8 @@ def main() -> None:
     
 
 if __name__ == "__main__":
-    apply_thesis_style()
-
-    # plotter = SlamRunPlotter.from_run(Path('runs/20260523_213633_normal'))
+    # plotter = SlamRunPlotter.from_run("runs/real/20260527_224117")
     # plotter.plot_all(save=True, show=True)
-
+    
     main()
     

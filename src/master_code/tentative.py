@@ -63,19 +63,19 @@ class TentativeLandmark:
     def steps_since_seen(self, current_step: int) -> int:
         return current_step - self.last_seen_step
 
-    def is_confirmed(self, M: int) -> bool:
+    def is_confirmed(self, current_step: int, M: int, N: int) -> bool:
         """
         M/N logic:
         Confirm if landmark has been observed in at least M distinct timesteps
         during the last N timesteps (inclusive of current_step).
         """
-        # # Fixed lifetime interpretation:
-        return self.hit_count >= M # ()
+        # Alt 1: Fixed lifetime interpretation:
+        # return self.hit_count >= M # ()
 
-        # # Sliding window intepreation: ]
-        # window_start = current_step - N + 1
-        # hits_in_window = sum(step >= window_start for step in self.observed_steps)
-        # return hits_in_window >= M
+        # # Alt 2: Sliding window interpretation:
+        window_start = current_step - N + 1
+        hits_in_window = sum(step >= window_start for step in self.observed_steps)
+        return hits_in_window >= M
     
     def can_still_be_confirmed(self, current_step: int, M: int, N: int) -> bool:
         """
@@ -96,6 +96,7 @@ def get_tentative_landmark_manager(cfg: SlamConfig) -> TentativeLandmarkManager:
         gate=cfg.tentative.gate,
     )
 
+@dataclass
 class TentativeLandmarkManager:
     """
     Manager for tentative landmarks that have been observed but not yet confirmed
@@ -121,7 +122,7 @@ class TentativeLandmarkManager:
         self.association_gate = gate
         self.tentative_landmarks: list[TentativeLandmark] = []
 
-    def process_unassociated_measurements(
+    def add_tentative_landmarks(
         self,
         current_step: int,
         unassociated_measurements: np.ndarray,
@@ -145,7 +146,7 @@ class TentativeLandmarkManager:
             Tentative landmarks that are ready to be promoted to graph landmarks.
         """
         M = unassociated_measurements.shape[0]
-        if new_tentative_landmarks.shape != (M, 2):
+        if new_tentative_landmarks.shape[0] != M:
             raise ValueError(f"Expected new_tentative_landmarks to have shape ({M}, 2), got {new_tentative_landmarks.shape}")
     
         for i in range(M):
@@ -219,7 +220,7 @@ class TentativeLandmarkManager:
         remaining: list[TentativeLandmark] = []
 
         for landmark in self.tentative_landmarks:
-            if landmark.is_confirmed(self.M):
+            if landmark.is_confirmed(current_step, self.M, self.N):
                 confirmed.append(landmark)
             else:
                 remaining.append(landmark)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from master_code.data_loader import RawLidarStepInput, SimulatedDataLoader, WheelOdometry
+from master_code.loaders.victoria_park import RawLidarStepInput, SimulatedDataLoader, WheelOdometry
 from master_code.measurements import SlamStepInput
 from master_code.preprocessing import preprocess_victoria_park_step
 

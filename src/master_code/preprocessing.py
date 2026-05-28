@@ -5,8 +5,6 @@ from dataclasses import dataclass
 import gtsam
 import numpy as np
 
-from master_code.data_loader import RawLidarStepInput, WheelOdometry
-from master_code.measurements import RelativePoseMeasurement, SlamStepInput
 from master_code.utils import ssa
 
 
@@ -24,7 +22,7 @@ class Car:
 def relative_pose(vel_e, steer, dt):
     """
     Convert encoder-frame velocity and wheel steer angle to relative pose increment using the 
-    kinematic bicycle model. Also calculates the coresponding jacobian.
+    kinematic bicycle model. Also calculates the corresponding jacobian.
 
     Parameters
     ----------
@@ -62,71 +60,54 @@ def relative_pose(vel_e, steer, dt):
     # Integrate twist over time interval using Expmap 
     odo = gtsam.Pose2.Expmap(twist_b*dt)
     
-    # Jacboian if wanting to propoagte noise on vel_e and steer
-    J_odo_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
+    # # Jacboian if wanting to propoagte noise on vel_e and steer
+    # J_odo_twist = gtsam.Pose2.ExpmapDerivative(twist_b*dt)
 
-    # Jacobian of twist w.r.t. u = [vel_e, steer] 
-    dvc_dve = 1.0 / d
-    dvc_da  = vel_e * (k * sec2) / (d*d)
+    # # Jacobian of twist w.r.t. u = [vel_e, steer] 
+    # dvc_dve = 1.0 / d
+    # dvc_da  = vel_e * (k * sec2) / (d*d)
 
-    drho1_dve = dt * dvc_dve
-    drho1_da  = dt * dvc_da
+    # drho1_dve = dt * dvc_dve
+    # drho1_da  = dt * dvc_da
 
-    ddp_dve = (dt / L) * t * dvc_dve
-    ddp_da  = (dt / L) * (t * dvc_da + vel_b * sec2)
+    # ddp_dve = (dt / L) * t * dvc_dve
+    # ddp_da  = (dt / L) * (t * dvc_da + vel_b * sec2)
 
-    J_twist_u = np.array([
-        [drho1_dve, drho1_da],
-        [0.0,       0.0      ],
-        [ddp_dve,   ddp_da   ],
-    ], dtype=float)
+    # J_twist_u = np.array([
+    #     [drho1_dve, drho1_da],
+    #     [0.0,       0.0      ],3
+    #     [ddp_dve,   ddp_da   ],
+    # ], dtype=float)
 
-    # Jacobian of odometry increment w.r.t. u = [vel_e, steer]
-    J_odo_u = J_odo_twist @ J_twist_u
+    # # Jacobian of odometry increment w.r.t. u = [vel_e, steer]
+    # J_odo_u = J_odo_twist @ J_twist_u
 
-    return odo, J_odo_u
+    return odo #, J_odo_u
 
 
-def preintegrate_wheel_odometry(
-    wheel_odometry: list[WheelOdometry],
-    odometry_covariance: np.ndarray,
-) -> RelativePoseMeasurement:
-    """Preintegrate raw wheel odometry into one relative pose measurement."""
-    T_odom = gtsam.Pose2.Identity()
-    T_odom_cov = np.zeros((3, 3))
-    odometry_covariance = np.asarray(odometry_covariance, dtype=float).reshape(3, 3)
+def preintegrate(
+    poses: list[gtsam.Pose2],
+    poses_covs: list[np.ndarray],
+) -> tuple[gtsam.Pose2, np.ndarray]:
+    """Preintegrate poses and covariance."""
+    
+    T_int = gtsam.Pose2.Identity()
+    T_int_cov = np.zeros((3, 3))
 
-    for odo in wheel_odometry:
-        T_delta, _J_delta_u = relative_pose(odo.velocity, odo.steering, odo.dt)
-        T_delta_cov = odo.dt * odometry_covariance
-
+    for dT, dT_cov in zip(poses, poses_covs):
         H1 = np.zeros((3, 3), order="F")
         H2 = np.zeros((3, 3), order="F")
 
-        T_odom = T_odom.compose(T_delta, H1, H2)
-        T_odom_cov = H1 @ T_odom_cov @ H1.T + H2 @ T_delta_cov @ H2.T
+        T_int = T_int.compose(dT, H1, H2)
+        T_int_cov = H1 @ T_int_cov @ H1.T + H2 @ dT_cov @ H2.T
 
-    return RelativePoseMeasurement(pose=T_odom, covariance=T_odom_cov)
+    return T_int, T_int_cov
 
 
 def extract_tree_measurements(scan: np.ndarray, max_range: float) -> np.ndarray:
     """Convert one raw lidar scan to filtered range-bearing tree measurements."""
     measurements = np.asarray(detect_trees(scan), dtype=float).reshape(-1, 2)
     return measurements[measurements[:, 0] < max_range]
-
-
-def preprocess_victoria_park_step(
-    raw_step: RawLidarStepInput,
-    odometry_covariance: np.ndarray,
-    max_range: float,
-) -> SlamStepInput:
-    """Convert one raw Victoria Park lidar step to the generic SLAM input."""
-    return SlamStepInput(
-        odometry=preintegrate_wheel_odometry(raw_step.odometry, odometry_covariance),
-        measurements=extract_tree_measurements(raw_step.scan, max_range),
-        scan_step=raw_step.scan_step,
-        scan_time=raw_step.scan_time,
-    )
 
 
 def detect_trees(scan):

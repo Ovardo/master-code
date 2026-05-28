@@ -13,7 +13,7 @@ sensor:
   max_range: 45.0
   fov_deg: 220.0
 tentative:
-  M: 4
+  M: 3
   N: 4
   gate: 0.2
 association:

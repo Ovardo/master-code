@@ -1,10 +1,17 @@
 import numpy as np
 import gtsam
 
-def rotmat2(theta: float) -> np.ndarray:
-    c, s = np.cos(theta), np.sin(theta)
-    return np.array([[c, -s],
-                     [s,  c]])
+def rotmat2(thetas):
+    """2x2 if single theta, or Nx2x2 if array of thetas."""
+    thetas = np.asarray(thetas)
+
+    c = np.cos(thetas)
+    s = np.sin(thetas)
+
+    return np.stack([
+        np.stack([ c, -s], axis=-1),
+        np.stack([ s,  c], axis=-1)
+    ], axis=-2)
 
 def ssa(angle):
     """Smallest Signed Angle between -pi and pi."""

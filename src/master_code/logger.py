@@ -36,7 +36,6 @@ class AssociationDiagnostics:
     predicted_measurements: np.ndarray
     association: np.ndarray
     local_landmarks: np.ndarray
-    local_landmark_keys: np.ndarray
     innovation_covariance: np.ndarray
 
     def as_npz_dict(self) -> dict[str, np.ndarray]:
@@ -49,7 +48,6 @@ class AssociationDiagnostics:
             "predicted_measurements": np.asarray(self.predicted_measurements, dtype=float).reshape(-1, 2),
             "association": np.asarray(self.association, dtype=np.int64).reshape(-1),
             "local_landmarks": np.asarray(self.local_landmarks, dtype=float).reshape(-1, 2),
-            "local_landmark_keys": np.asarray(self.local_landmark_keys, dtype=np.int64).reshape(-1),
             "innovation_covariance": np.asarray(self.innovation_covariance, dtype=float),
         }
 
@@ -184,8 +182,7 @@ class SlamLogger:
             "timestamp":     datetime.now().isoformat(timespec="seconds"),
             "num_poses":     diagnostics.scan_step + 1,
             "num_landmarks": diagnostics.num_landmarks,
-            "factor_graph_error": diagnostics.factor_graph_error,
-            "run_time_s":  total_time,
+            "run_time_s":    total_time,
         }
         
         metadata_path = self.run_dir / "metadata.json"
@@ -199,7 +196,6 @@ class SlamLogger:
                         f"  Path        : {self.run_dir.resolve()}",
                         f"  Poses       : {metadata['num_poses']}",
                         f"  Landmarks   : {metadata['num_landmarks']}",
-                        f"  Final error : {metadata['factor_graph_error']:.3f}",
                         f"  Run time    : {metadata['run_time_s']:.2f}s",
                     ]
                 )
@@ -244,7 +240,7 @@ class SlamLogger:
         snap_dir = run_dir / "snapshots"
         if not snap_dir.exists():
             raise FileNotFoundError(snap_dir)
-
+        # TODO: handle memory concerns for large number snapshots
         paths = sorted(snap_dir.glob("snap_*.npz"))
         return [SlamLogger.load_snapshot(p) for p in paths]
 

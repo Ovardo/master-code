@@ -3,7 +3,7 @@ from __future__ import annotations
 import gtsam
 import matplotlib.pyplot as plt
 
-from master_code.data_loader import VictoriaParkLoader
+from master_code.loaders.victoria_park import VictoriaParkLoader
 from master_code.plotting.thesis_style import apply_thesis_style, save_figure, thesis_figsize
 from master_code.preprocessing import relative_pose
 from master_code.plotter import plot_estimate

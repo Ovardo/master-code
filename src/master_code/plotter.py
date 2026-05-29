@@ -108,8 +108,7 @@ class SlamRunPlotter:
             t_cov   = self.steps.get("duration_covariance_extraction"),
             t_assoc = self.steps.get("duration_association"),
             t_opt   = self.steps.get("duration_optimization"),
-            t_lmap  = self.steps.get("duration_local_landmark_extraction"),
-            t_total = self.steps.get("duration_update"),         
+            t_step  = self.steps.get("duration_step"),         
         )
         return fig, axes
     
@@ -120,8 +119,7 @@ class SlamRunPlotter:
             t_cov   = self.steps.get("duration_covariance_extraction"),
             t_assoc = self.steps.get("duration_association"),
             t_opt   = self.steps.get("duration_optimization"),
-            t_lmap  = self.steps.get("duration_local_landmark_extraction"),
-            t_total = self.steps.get("duration_update"),         
+            t_step  = self.steps.get("duration_step"),         
         )
         return fig, axes
     
@@ -224,10 +222,11 @@ class SlamRunPlotter:
         self._finish_figure( self.plot_pose_nees(), name="pose_nees", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_landmark_nis(), name="landmark_nis", save=save, show=show, fmt="pdf" )
         self._finish_figure( self.plot_position_nis(), name="position_nis", save=save, show=show, fmt="pdf" )
-        # self._finish_figure( self.plot_cumulative_timing(), name="timing_breakdown", save=save, show=show, fmt="pdf" )
-        # self._finish_figure( self.plot_per_step_timing(), name="timing_over_time", save=save, show=show, fmt="pdf" )
-        # self._finish_figure( self.plot_timing_vs_landmarks(), name="timing_vs_landmarks", save=save, show=show, fmt="pdf" )
-        # self._finish_figure( self.plot_landmark_growth(), name="landmark_growth", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_cumulative_timing(), name="timing_cumulative", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_per_step_timing(), name="timing_per_step", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_landmarks_and_timing(), name="landmarks_and_timing", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_timing_vs_landmarks(), name="timing_vs_landmarks", save=save, show=show, fmt="pdf" )
+        self._finish_figure( self.plot_landmark_growth(), name="landmark_growth", save=save, show=show, fmt="pdf" )
         plt.show()
 
 

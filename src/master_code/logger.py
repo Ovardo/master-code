@@ -56,20 +56,15 @@ class StepDiagnostics:
     """Per-step scalar diagnostics for logging and plotting."""
     scan_step: int = -1
     scan_time: float = np.nan
-    factor_graph_error: float = np.nan
-    num_factors: float = np.nan
     num_landmarks: int = 0
     num_local_landmarks: int = 0
     num_associated_measurement: int = 0
     num_unassociated_measurement: int = 0
-    duration_update: float = 0.0
+    duration_step: float = 0.0
     duration_optimization: float = 0.0
     duration_association: float = 0.0
     duration_covariance_extraction: float = 0.0
-    duration_tentative_processing: float = 0.0
     duration_local_landmark_extraction: float = 0.0
-    duration_innovation_covariance: float = 0.0
-    duration_scan_processing: float = 0.0
 
     def clear(self) -> None:
         """Reset all diagnostics to their default values."""

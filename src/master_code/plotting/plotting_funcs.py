@@ -116,8 +116,7 @@ def plot_cumulative_timing(
     t_cov: np.ndarray,
     t_assoc: np.ndarray,
     t_opt: np.ndarray,
-    t_lmap: np.ndarray,
-    t_total: np.ndarray,  
+    t_step: np.ndarray,  
     ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot per-step and cumulative processing time breakdown."""
@@ -126,17 +125,30 @@ def plot_cumulative_timing(
     t_cov   = np.nan_to_num(t_cov,   nan=0.0)
     t_assoc = np.nan_to_num(t_assoc, nan=0.0)
     t_opt   = np.nan_to_num(t_opt,   nan=0.0)
-    t_lmap  = np.nan_to_num(t_lmap,  nan=0.0)
-    t_total = np.nan_to_num(t_total, nan=0.0)
-    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt + t_lmap), 0.0)
+    t_step  = np.nan_to_num(t_step,  nan=0.0)
+    t_other = np.maximum(t_step - (t_cov + t_assoc + t_opt), 0.0)
 
-    labels = ["Covariance extraction", "Association", "Optimisation", "Local Landmark Extraction", "Other"]
-    parts = [t_cov, t_assoc, t_opt, t_lmap, t_other]
+    total_step = float(np.sum(t_step))
+    total_cov = float(np.sum(t_cov))
+    total_assoc = float(np.sum(t_assoc))
+    total_opt = float(np.sum(t_opt))
+    print(
+        f"Total processing times [s] -> "
+        f"step: {total_step:.3f}, cov: {total_cov:.3f}, assoc: {total_assoc:.3f}, opt: {total_opt:.3f}"
+    )
 
-    parts_ms = [1000*p for p in parts]
-    ax.stackplot(steps, *parts_ms, labels=labels)
-    ax.set_ylabel("Time (ms)")
-    ax.set_title("Per-step Processing Time")
+    t_cov_cum = np.cumsum(t_cov)
+    t_assoc_cum = np.cumsum(t_assoc)
+    t_opt_cum = np.cumsum(t_opt)
+    t_other_cum = np.cumsum(t_other)
+
+    labels = ["Covariance extraction", "Association", "Optimisation", "Other"]
+    parts = [t_cov_cum, t_assoc_cum, t_opt_cum, t_other_cum]
+
+    parts = [p for p in parts]
+    ax.stackplot(steps, *parts, labels=labels)
+    ax.set_ylabel("Time (S)")
+    ax.set_title(f"Cumulative Processing Time (Total: {total_step:.2f} s)")
     ax.legend(loc="upper left", fontsize=8)
     ax.grid(True, lw=0.4)
 
@@ -148,8 +160,7 @@ def plot_per_step_timing(
     t_cov: np.ndarray,
     t_assoc: np.ndarray,
     t_opt: np.ndarray,
-    t_lmap: np.ndarray,
-    t_total: np.ndarray,
+    t_step: np.ndarray,
     ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot per-step and cumulative processing time breakdown."""
@@ -158,13 +169,12 @@ def plot_per_step_timing(
     t_cov   = np.nan_to_num(t_cov,   nan=0.0)
     t_assoc = np.nan_to_num(t_assoc, nan=0.0)
     t_opt   = np.nan_to_num(t_opt,   nan=0.0)
-    t_lmap  = np.nan_to_num(t_lmap,  nan=0.0)
-    t_total = np.nan_to_num(t_total, nan=0.0)
+    t_step  = np.nan_to_num(t_step,  nan=0.0)
     
-    t_other = np.maximum(t_total - (t_cov + t_assoc + t_opt + t_lmap), 0.0)
+    t_other = np.maximum(t_step - (t_cov + t_assoc + t_opt), 0.0)
 
-    labels = ["Covariance extraction", "Association", "Optimisation", "Local Landmark Extraction", "Other"]
-    parts = [t_cov, t_assoc, t_opt, t_lmap, t_other]
+    labels = ["Covariance extraction", "Association", "Optimisation", "Other"]
+    parts = [t_cov, t_assoc, t_opt, t_other]
 
     parts_ms = [1000*p for p in parts]
     ax.stackplot(steps, *parts_ms, labels=labels)
@@ -172,6 +182,12 @@ def plot_per_step_timing(
     ax.set_title("Per-step Processing Time")
     ax.legend(loc="upper left", fontsize=8)
     ax.grid(True, lw=0.4)
+
+    # Print per-step processing time statistics
+    per_step_ms = t_step * 1000
+    print(f"Per-step Processing Time - Max: {np.max(per_step_ms):.2f} ms, "
+          f"Average: {np.mean(per_step_ms):.2f} ms, "
+          f"Median: {np.median(per_step_ms):.2f} ms")
 
     return fig, ax
 
@@ -184,7 +200,7 @@ def plot_landmarks_and_timing(
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot covariance recovery step time and in-view predicted landmark count."""
 
-    fig, axes = _ensure_ax(axes, figsize=(8, 3), nrows=2, ncols=1, sharex=True)
+    fig, axes = _ensure_ax(axes, figsize=(8, 4), nrows=2, ncols=1, sharex=True)
 
     axes[0].plot(steps, t_cov, lw=0.8, color="tab:blue", label="Covariance recovery time")
     axes[0].set_ylabel("Time (s)")
@@ -197,7 +213,7 @@ def plot_landmarks_and_timing(
     axes[1].set_ylabel("# In-view landmarks")
     axes[1].set_xlabel("Scan step")
     axes[1].grid(True, lw=0.4)
-    axes[1].legend(loc="upper left")
+    axes[1].legend()
 
     return fig, axes
 
@@ -325,29 +341,36 @@ def plot_pose_diagnostics(
 
         colors = {1: "steelblue", 2: "seagreen", 3: "tomato"}
         alphas = {1: 0.28, 2: 0.18, 3: 0.10}
+        sigma_handles = []
+        sigma_labels = []
 
-        for ax, sigma in zip(axes, sigma_series):
+        for ax_idx, (ax, sigma) in enumerate(zip(axes, sigma_series)):
             for k in (3, 2, 1):
                 bound = k * sigma
 
-                ax.fill_between(
+                label = rf"$\pm {k}\sigma$" if ax_idx == 0 else None
+                fill = ax.fill_between(
                     steps,
                     -bound,
                     bound,
                     color=colors[k],
                     alpha=alphas[k],
-                    label=rf"$\pm {k}\sigma$",
+                    label=label,
                     linewidth=0.0,
                 )
                 ax.plot(bound, color=colors[k], lw=0.7, alpha=0.5)
                 ax.plot(-bound, color=colors[k], lw=0.7, alpha=0.5)
 
+                if ax_idx == 0:
+                    sigma_handles.append(fill)
+                    sigma_labels.append(rf"$\pm {k}\sigma$")
+
     # -------------------------------------------------------------------------
     # Component errors
     # -------------------------------------------------------------------------
     if plot_error:
-        error = poses - poses_gt
-
+        error = poses - poses_gt # could use more exact log(T_gt^{-1}*T)
+        
         x_error = error[:, 0]
         y_error = error[:, 1]
         yaw_error = ssa(error[:, 2])
@@ -365,7 +388,7 @@ def plot_pose_diagnostics(
         for ax, (err, label) in zip(axes, error_series):
             ax.plot(
                 err,
-                color="black",
+                color="tab:orange",
                 lw=0.9,
                 label=label,
                 zorder=10,
@@ -384,10 +407,33 @@ def plot_pose_diagnostics(
     axes[0].set_title(title)
     axes[-1].set_xlabel("Scan step")
 
-    for ax in axes:
+    handles, labels = axes[0].get_legend_handles_labels()
+    error_handles = [h for h, l in zip(handles, labels) if "error" in l.lower()]
+    error_labels = [l for l in labels if "error" in l.lower()]
+    if error_handles:
+        error_legend = axes[0].legend(
+            error_handles,
+            error_labels,
+            loc="upper left",
+            fontsize=9,
+        )
+        axes[0].add_artist(error_legend)
+
+    if plot_cov and sigma_handles:
+        axes[0].legend(
+            sigma_handles,
+            sigma_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.02),
+            fontsize=9,
+            frameon=True,
+            ncol=3,
+        )
+
+    for ax in axes[1:]:
         handles, labels = ax.get_legend_handles_labels()
         if handles:
-            ax.legend(loc="upper left", fontsize=8)
+            ax.legend(loc="upper left", fontsize=9)
 
     return fig, axes
 
@@ -406,21 +452,29 @@ def plot_pose_nees(
 
     poses_gt = poses_gt[:n]
 
-    poses_error = poses - poses_gt
-    poses_error[:, 2] = ssa(poses_error[:, 2])
+    # poses_error = poses - poses_gt
+    # poses_error[:, 2] = ssa(poses_error[:, 2])
+
+    poses_error = np.zeros_like(poses)
+    
+    import gtsam
+    for i, (pose, pose_gt) in enumerate(zip(poses, poses_gt)):
+        T = gtsam.Pose2(*pose)
+        T_gt = gtsam.Pose2(*pose_gt)
+        poses_error[i, :] = gtsam.Pose2.Logmap(T.between(T_gt))
     # TODO test with lie also
 
     nees = np.einsum("ij,ijk,ik->i", poses_error, np.linalg.inv(poses_covs), poses_error)
     anees = np.sum(nees) / n 
     
     ax.plot(nees, color="steelblue", label=f"NEES (ANEES={anees:.2f})")
-    ax.axhline(chi2.isf(1-0.95, 3), ls="--", c="tomato", lw=0.8, label=r"$\chi^2_{3,0.95}$")
-    ax.axhline(chi2.isf(1-0.05, 3), ls="--", c="orange", lw=0.8, label=r"$\chi^2_{3,0.05}$")
+    ax.axhline(chi2.isf(1-0.95, 3), ls="--", c="tomato", label=r"$\chi^2_{3,0.95}$")
+    ax.axhline(chi2.isf(1-0.05, 3), ls="--", c="orange", label=r"$\chi^2_{3,0.05}$")
     ax.set_xlabel("Scan step")
     ax.set_ylabel("NEES")
     ax.set_title("Pose NEES")
     ax.grid(True, lw=0.4)
-    ax.legend()
+    ax.legend(loc="upper center", ncol=3, frameon=True)
 
     return fig, ax
 
@@ -574,17 +628,18 @@ def plot_association(
 
 def plot_landmark_nis(
     diagnostics: list[dict[str, np.ndarray]],
-    axes : plt.Axes | None = None,
+    ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Plot joint association NIS over saved diagnostic scans."""
- 
-    fig, axes = _ensure_ax(axes, figsize=(8, 5), nrows=2, ncols=1, sharex=True)
+    """Plot landmark measurement NIS per degree of freedom."""
+
+    fig, ax = _ensure_ax(ax, figsize=(8, 3))
 
     num_steps = len(diagnostics)
-    
+
     nis = np.empty(num_steps, dtype=float)
     dofs = np.empty(num_steps, dtype=int)
     steps = np.empty(num_steps, dtype=int)
+
     for i, step_diag in enumerate(diagnostics):
         step   = step_diag.get("scan_step")[0]
         z      = step_diag.get("measurements")
@@ -592,39 +647,43 @@ def plot_landmark_nis(
         assoc  = step_diag.get("association")
         S      = step_diag.get("innovation_covariance")
 
-        nis[i] = NIS(z, z_pred, S,assoc)
+        nis[i] = NIS(z, z_pred, S, assoc)
         dofs[i] = 2 * np.sum(assoc >= 0)
         steps[i] = step
 
-    upper = chi2.isf(1-0.95, dofs) 
-    lower = chi2.isf(0.95, dofs)
-    valid = (dofs > 0) & np.isfinite(nis)
- 
-    if np.any(valid):   
-        axes[0].plot(steps[valid], nis[valid], lw=1.2, color="steelblue", label="NIS")
-        axes[0].plot(steps[valid], dofs[valid], lw=1.0, ls=":", color="tomato", label="E[NIS] = dof")
-        axes[0].plot(steps[valid], upper[valid], lw=1.0, ls=":", color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$")
-        axes[0].plot(steps[valid], lower[valid], lw=1.0, ls=":", color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$")
+    # Remove scans with no associated range-bearing measurements
+    valid = dofs > 0
+    nis = nis[valid]
+    dofs = dofs[valid]
+    steps = steps[valid]
 
-        axes[1].plot(steps[valid], nis[valid] / dofs[valid], lw=1.2, color="steelblue", label="NIS / dof")
-        axes[1].axhline(1.0, lw=1.0, ls=":", color="tomato", label="E[NIS / dof] = 1")
-        axes[1].plot(steps[valid], upper[valid] / dofs[valid], lw=1.0, ls=":", color="green", label=r"$\chi^2_{{dof},\alpha_{joint}}$ / dof")
-        axes[1].plot(steps[valid], lower[valid] / dofs[valid], lw=1.0, ls=":", color="orange", label=r"$\chi^2_{{dof},1-\alpha_{joint}}$ / dof")
-    else:
-        axes[0].text(0.5, 0.5, "No associated measurements in saved diagnostics", ha="center", va="center")
-        axes[1].text(0.5, 0.5, "No normalized NIS values", ha="center", va="center")
+    # Per-step NIS per degree of freedom
+    nis_per_dof = nis / dofs
 
-    axes[0].set_ylabel("NIS")
-    axes[0].set_title("Joint NIS")
-    if np.any(valid):
-        axes[0].legend(loc="upper left", fontsize=8)
-    axes[0].grid(True, lw=0.4)
+    nis_lower = chi2.ppf(0.025, dofs) / dofs
+    nis_upper = chi2.ppf(0.975, dofs) / dofs
 
-    axes[1].set_xlabel("Scan step")
-    axes[1].set_ylabel("NIS / DOF")
-    axes[1].set_title("Joint NIS per Degree of Freedom")
-    if np.any(valid):
-        axes[1].legend(loc="upper left", fontsize=8)
-    axes[1].grid(True, lw=0.4)
+    # Aggregate NIS per degree of freedom
+    D = np.sum(dofs)
+    anis_per_dof = np.sum(nis) / D
 
-    return fig, axes
+    anis_lower = chi2.ppf(0.025, D) / D
+    anis_upper = chi2.ppf(0.975, D) / D
+
+    ax.plot(steps, nis_per_dof, lw=1.2, color="steelblue", label=r"$\bar{\epsilon}_{k,\mathrm{lm}}$")
+    ax.axhline(1.0, lw=1.0, ls=":", color="tomato", label=r"$\mathbb{E}[\bar{\epsilon}_{k,\mathrm{lm}}]=1$")
+    ax.plot(steps, nis_upper, lw=1.0, ls=":", color="tab:green", label=r"$\chi^2_{d_{k,\mathrm{lm}},\,0.975}/d_{k,\mathrm{lm}}$")
+    ax.plot(steps, nis_lower, lw=1.0, ls=":", color="orange", label=r"$\chi^2_{d_{k,\mathrm{lm}},\,0.025}/d_{k,\mathrm{lm}}$")
+    anis_text = (
+        rf"$\bar{{\epsilon}}_{{\mathrm{{ANIS,lm}}}} = {anis_per_dof:.2f}$"
+        "\n"
+        rf"$95\%$ interval: $[{anis_lower:.2f},\,{anis_upper:.2f}]$"
+    )
+    ax.text(0.98, 0.95, anis_text, transform=ax.transAxes, ha="right", va="top", fontsize=8, bbox=dict(facecolor="white", alpha=0.85, edgecolor="none"))
+    ax.set_title(r"Landmark measurement NIS per degree of freedom")
+    ax.set_xlabel(r"Scan step $k$")
+    ax.set_ylabel(r"$\bar{\epsilon}_{k,\mathrm{lm}}$")
+    ax.legend(loc="upper left", fontsize=8)
+    ax.grid(True, lw=0.4)
+
+    return fig, ax

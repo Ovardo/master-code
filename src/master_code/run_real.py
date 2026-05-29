@@ -12,7 +12,7 @@ from tqdm import tqdm
 from master_code.association import JCBB_association
 from master_code.config import SlamConfig
 from master_code.loaders.victoria_park import VictoriaParkLoader
-from master_code.logger import SlamLogger, StepDiagnostics
+from master_code.logger import SlamLogger, StepDiagnostics, AssociationDiagnostics
 from master_code.paths import RUNS_ROOT
 from master_code.plotter import SlamRunPlotter
 from master_code.preprocessing import detect_trees, preintegrate, relative_pose
@@ -23,7 +23,7 @@ from master_code.utils import make_psd, pose2_to_array, reorder_covariance_naive
 def main() -> None:
     NUM_STEPS   = 7300
     OUTPUT_DIR  = RUNS_ROOT / "real" / datetime.now().strftime("%Y%m%d_%H%M%S") 
-    CONFIG_NAME = "vp1.yaml"
+    CONFIG_NAME = "real.yaml"
 
     # ======= Load configuration ========
     config = SlamConfig.load(CONFIG_NAME)
@@ -68,7 +68,6 @@ def main() -> None:
     # ======= Add prior factor ========
     prior_mean = gtsam.Pose2(*loader.initial_pose)
    
-
     new_values.insert(X(0), prior_mean)
     poses_keys.append(X(0))
 
@@ -89,6 +88,9 @@ def main() -> None:
     # ======= Main loop =======
     t0 = time.perf_counter()
     for k, meas in tqdm(enumerate(loader.iterate(num_steps)), total=num_steps, desc="SLAM"):
+        
+        diagnostics = StepDiagnostics()
+        t_step = time.perf_counter()
         
         # ======= Raw measurements ========
         wheel_odometry = meas.odometry
@@ -128,10 +130,11 @@ def main() -> None:
         )
         
         # ======= Update iSAM2 with predicted pose =======
+        t0 = time.perf_counter()
         isam2.update(new_factors, new_values)
         new_factors = gtsam.NonlinearFactorGraph()
         new_values = gtsam.Values()
-
+        diagnostics.add_time("duration_optimization", time.perf_counter() - t0)
         
         # ======= Process lidar scan ========
         measurements = detect_trees(scan)
@@ -177,16 +180,21 @@ def main() -> None:
             H[2*i:2*i+2, 3+2*i:3+2*i+2] = local_jacobians_landmarks[i]
 
         # Recover joint marginal covariance from Bayes tree
+        t0 = time.perf_counter()
         cov_query = [key_kp1] + local_landmarks_keys
         P = isam2.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
+        diagnostics.duration_covariance_extraction = time.perf_counter() - t0
+        
 
         # Innovation covariance for local predicted measurements
         S = H @ P @ H.T + R
         # S = make_psd(S)
         
         # ======= Perform data association ========
+        t0 = time.perf_counter()
         association = JCBB_association(measurements, local_predicted_measurements, S, config.association.alpha_individual,  config.association.alpha_joint)
+        diagnostics.duration_association = time.perf_counter() - t0
 
         # ======= Handle asociated measurements ======= 
         is_associated = association >= 0
@@ -246,21 +254,37 @@ def main() -> None:
      
         
         # ======= Update ISAM2 with measurement factors and values ========
+        t0 = time.perf_counter()
         isam2.update(new_factors, new_values)
         new_factors = gtsam.NonlinearFactorGraph()
         new_values = gtsam.Values()
-        
+        diagnostics.add_time("duration_optimization", time.perf_counter() - t0)
+
         # ======= Logging ========
-        diagnostics = StepDiagnostics(
-            scan_step = k+1,
-            scan_time = meas.scan_time,
-            num_landmarks = len(landmarks_keys),    
-            num_local_landmarks = len(local_landmarks_keys),
-            num_associated_measurement = np.sum(is_associated),
-            num_unassociated_measurement = np.sum(~is_associated)
-        )
+        diagnostics.duration_step = time.perf_counter() - t_step
+        diagnostics.scan_step = k+1
+        diagnostics.scan_time = meas.scan_time
+        diagnostics.num_landmarks = len(landmarks_keys)
+        diagnostics.num_local_landmarks = len(local_landmarks_keys)
+        diagnostics.num_associated_measurement = np.sum(is_associated)
+        diagnostics.num_unassociated_measurement = np.sum(~is_associated)
         
         diagnostics_steps.append(diagnostics)
+
+        if logger.should_save_association_diagnostics(k+1):
+            logger.save_association_diagnostics(
+                AssociationDiagnostics(
+                    scan_step=k+1,
+                    scan_time=meas.scan_time,
+                    pose_index=k+1,
+                    pose=pose2_to_array(T_kp1),
+                    measurements=measurements,
+                    predicted_measurements=local_predicted_measurements,
+                    association=association,
+                    local_landmarks=local_landmarks,
+                    innovation_covariance=S
+                )
+            )
         
     total_time = time.perf_counter() - t0
 
@@ -288,7 +312,7 @@ def main() -> None:
     # ======= Save result to output dir ========
     logger.save_snapshot(k, snapshot, final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
-    # logger.save_metadata(diagnostics_steps[-1], total_time)
+    logger.save_metadata(diagnostics_steps[-1], total_time)
 
     # ======= Produce, plot and save figures ========
     plotter = SlamRunPlotter.from_run(OUTPUT_DIR)

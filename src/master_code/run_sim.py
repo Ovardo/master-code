@@ -23,7 +23,7 @@ from master_code.utils import make_psd, pose2_to_array, reorder_covariance_naive
 def main() -> None:
     NUM_STEPS   = 7300
     OUTPUT_DIR  = RUNS_ROOT / "sim" / datetime.now().strftime("%Y%m%d_%H%M%S") 
-    CONFIG_NAME = "simulated.yaml"
+    CONFIG_NAME = "sim.yaml"
 
     # ======= Load configuration ========
     config = SlamConfig.load(CONFIG_NAME)

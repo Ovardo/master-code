@@ -17,7 +17,7 @@ dependencies = [
 [project.scripts]
 run_real = "master_code.run_real:main"
 run_sim = "master_code.run_sim:main"
-plot_results = "master_code.plotter:main"
+plot_run = "master_code.plotter:main"
 
 
 [build-system]

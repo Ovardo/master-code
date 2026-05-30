@@ -34,29 +34,31 @@ class SlamRunPlotter:
     snapshots: list[dict[str, np.ndarray]]
     association: list[dict[str, np.ndarray]]
     config: SlamConfig
-    gnss: np.ndarray | None = None # Inject if real-run
-    gt_poses: np.ndarray | None = None # Inject if sim-run
-    gt_landmarks: np.ndarray | None = None # Inject if sim-run
+    gnss: np.ndarray | None = None
+    gt_poses: np.ndarray | None = None
+    gt_landmarks: np.ndarray | None = None
 
-    
     @classmethod
     def from_run(cls, run_dir: Path | str) -> SlamRunPlotter:
-        
         run_path = Path(run_dir)
-        run_type = run_path.parent.name
         
         gnss = None
         gt_poses = None
         gt_landmarks = None
 
-        if run_type == "sim":
+        metadata = SlamLogger.load_metadata(run_path)
+        dataset = metadata["dataset"]
+
+        if dataset == "sim":
             loader = SimulatedDataLoader()
             gt_poses = loader.poses_gt
             gt_landmarks = loader.landmarks_gt
-        elif run_type == "real":
+        elif dataset == "victoria_park":
             loader = VictoriaParkLoader()
             gnss = loader.gnss_filtered
-       
+        else:
+            raise ValueError(f"Unknown dataset in metadata: {dataset}")
+
         return cls(
             run_dir      = run_path,
             steps        = SlamLogger.load_steps(run_path),
@@ -125,10 +127,11 @@ class SlamRunPlotter:
     
     def plot_landmarks_and_timing(self, axes = None) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
         fig, axes = plot_landmarks_and_timing(
-            axes    = axes,
-            steps   = self.steps.get("scan_step"),
-            t_cov   = self.steps.get("duration_covariance_extraction"),
-            n_local = self.steps.get("num_local_landmarks"),
+            axes      = axes,
+            steps     = self.steps.get("scan_step"),
+            t_cov     = self.steps.get("duration_covariance_extraction"),
+            n_local   = self.steps.get("num_local_landmarks"),
+            n_support = self.steps.get("num_support_cliques"),
         )
         return fig, axes
 

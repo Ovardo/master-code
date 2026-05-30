@@ -60,6 +60,7 @@ class StepDiagnostics:
     num_local_landmarks: int = 0
     num_associated_measurement: int = 0
     num_unassociated_measurement: int = 0
+    num_support_cliques: int = 0
     duration_step: float = 0.0
     duration_optimization: float = 0.0
     duration_association: float = 0.0
@@ -170,11 +171,13 @@ class SlamLogger:
         self,
         diagnostics: StepDiagnostics,
         total_time: float,
+        dataset: str,
         verbose: bool = True,
     ) -> None:
     
         metadata = {
             "timestamp":     datetime.now().isoformat(timespec="seconds"),
+            "dataset":       dataset,
             "num_poses":     diagnostics.scan_step + 1,
             "num_landmarks": diagnostics.num_landmarks,
             "run_time_s":    total_time,
@@ -189,6 +192,7 @@ class SlamLogger:
                     [
                         "[SlamLogger] Run saved",
                         f"  Path        : {self.run_dir.resolve()}",
+                        f"  Dataset     : {metadata['dataset']}",
                         f"  Poses       : {metadata['num_poses']}",
                         f"  Landmarks   : {metadata['num_landmarks']}",
                         f"  Run time    : {metadata['run_time_s']:.2f}s",
@@ -211,6 +215,13 @@ class SlamLogger:
     @staticmethod
     def load_steps(run_path: Path | str) -> dict[str, np.ndarray]:
         return SlamLogger._load_npz_dict(Path(run_path) / "steps.npz")
+
+    @staticmethod
+    def load_metadata(run_path: Path | str) -> dict:
+        path = Path(run_path) / "metadata.json"
+        if not path.exists():
+            raise FileNotFoundError(path)
+        return json.loads(path.read_text())
 
     @staticmethod
     def load_snapshot(snapshot_path: Path | str) -> dict[str, np.ndarray]:

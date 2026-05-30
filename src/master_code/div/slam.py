@@ -6,13 +6,13 @@ import gtsam
 import numpy as np
 from gtsam.symbol_shorthand import L, X
 
-from master_code.association import get_associator
+from master_code.data_association import get_associator
 from master_code.config import SlamConfig
 from master_code.div.utils_gtsam import reorder_covariance_naive
 from master_code.logger import AssociationDiagnostics, SlamLogger, StepDiagnostics
 from master_code.measurements import RelativePoseMeasurement, SlamStepInput
-from master_code.sensor import get_sensor_model
-from master_code.tentative import TentativeLandmark, get_tentative_landmark_manager
+from master_code.div.sensor import get_sensor_model
+from master_code.landmark_manager import TentativeLandmark, get_tentative_landmark_manager
 from master_code.utils import pose2_to_array
 
 # TODO: visualize display(graphviz.Source(isam.dot()))

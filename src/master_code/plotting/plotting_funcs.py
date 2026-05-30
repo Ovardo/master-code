@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib.patches import Ellipse
 from scipy.stats import chi2
 
-from master_code.association import NIS, individualCompatibility
+from master_code.data_association import NIS, individualCompatibility
 from master_code.plotting.thesis_style import thesis_figsize
 from master_code.utils import rotmat2, ssa
 
@@ -120,7 +120,7 @@ def plot_cumulative_timing(
     ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot per-step and cumulative processing time breakdown."""
-    fig, ax = _ensure_ax(ax, figsize=(8, 3), sharex=True)
+    fig, ax = _ensure_ax(ax, figsize=(6, 3), sharex=True)
 
     t_cov   = np.nan_to_num(t_cov,   nan=0.0)
     t_assoc = np.nan_to_num(t_assoc, nan=0.0)
@@ -164,7 +164,7 @@ def plot_per_step_timing(
     ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot per-step and cumulative processing time breakdown."""
-    fig, ax = _ensure_ax(ax, figsize=(8, 2.5))
+    fig, ax = _ensure_ax(ax, figsize=(6, 2.5))
 
     t_cov   = np.nan_to_num(t_cov,   nan=0.0)
     t_assoc = np.nan_to_num(t_assoc, nan=0.0)
@@ -185,9 +185,13 @@ def plot_per_step_timing(
 
     # Print per-step processing time statistics
     per_step_ms = t_step * 1000
+    n_above_214 = int(np.sum(per_step_ms > 214)) # 214 ms is time between lidar scans in VP
+    share_above_214 = (n_above_214 / len(per_step_ms) * 100.0) if len(per_step_ms) else 0.0
     print(f"Per-step Processing Time - Max: {np.max(per_step_ms):.2f} ms, "
-          f"Average: {np.mean(per_step_ms):.2f} ms, "
-          f"Median: {np.median(per_step_ms):.2f} ms")
+        f"95th Quantile: {np.quantile(per_step_ms, 0.95):.2f} ms, "
+        f"Average: {np.mean(per_step_ms):.2f} ms, "
+        f"Median: {np.median(per_step_ms):.2f} ms, "
+        f"Steps > 214 ms: {n_above_214} ({share_above_214:.2f}%)")
 
     return fig, ax
 
@@ -196,24 +200,30 @@ def plot_landmarks_and_timing(
     steps: np.ndarray,
     t_cov: np.ndarray,
     n_local: np.ndarray,
+    n_support: np.ndarray,
     axes: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot covariance recovery step time and in-view predicted landmark count."""
 
-    fig, axes = _ensure_ax(axes, figsize=(8, 4), nrows=2, ncols=1, sharex=True)
+    fig, axes = _ensure_ax(axes, figsize=(6, 6), nrows=3, ncols=1, sharex=True)
 
     axes[0].plot(steps, t_cov, lw=0.8, color="tab:blue", label="Covariance recovery time")
     axes[0].set_ylabel("Time (s)")
-    axes[0].set_yscale("log")
+    # axes[0].set_yscale("log")
     axes[0].grid(True, which="both", axis="both", lw=0.4)
     axes[0].legend(loc="upper left")
     axes[0].tick_params(axis="x", which="both", labelbottom=False)
 
     axes[1].plot(steps, n_local, lw=0.8, color="tab:orange", label="# In-view landmarks")
     axes[1].set_ylabel("# In-view landmarks")
-    axes[1].set_xlabel("Scan step")
     axes[1].grid(True, lw=0.4)
     axes[1].legend()
+
+    axes[2].plot(steps, n_support, lw=0.8, color="tab:green", label="# Support cliques")
+    axes[2].set_ylabel("# Support cliques")
+    axes[2].set_xlabel("Scan step")
+    axes[2].grid(True, lw=0.4)
+    axes[2].legend()
 
     return fig, axes
 

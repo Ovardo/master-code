@@ -158,38 +158,6 @@ wheels = [
 ]
 
 [[package]]
-name = "gtsam-develop"
-version = "4.3a1.dev202605181902"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "pytest" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/c3/acaa4f690d180ebe3b9b3e67f662bf6f3bb13bcbdaddb12aa0f955919025/gtsam_develop-4.3a1.dev202605181902-cp311-cp311-macosx_10_15_universal2.whl", hash = "sha256:c37afdf74e243456eb03f4099e63aa2713be32bede41b4987bf34929d7b67199", size = 43005647, upload-time = "2026-05-18T20:12:08.06Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/fc/50a1e2a40f6b539b506a68fc7046fd1b58fb5f67342618f88b035b92dd85/gtsam_develop-4.3a1.dev202605181902-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:28486666851602dccd58f67cf9943d1eeaa5f23eca8a44e62ce4f12c2250a7c2", size = 30513398, upload-time = "2026-05-18T20:12:11.647Z" },
-    { url = "https://files.pythonhosted.org/packages/25/ef/2d495dbb8e34c8b3cb71b59954f6847e8153eda5e6dad763f3e061f8c50b/gtsam_develop-4.3a1.dev202605181902-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:43cb8a7e3417119da0fca7ca6601e489eef89a28ddc5e52d2fd0d90632049089", size = 31961689, upload-time = "2026-05-18T20:12:15.274Z" },
-    { url = "https://files.pythonhosted.org/packages/5c/a9/25a20391884a0c24913d871086c2c6d53ebd748acf81396c0781c957d5bd/gtsam_develop-4.3a1.dev202605181902-cp312-cp312-macosx_10_15_universal2.whl", hash = "sha256:fdcb05eafc11c10eb6425ecd4f2f8e956f0aae8f1a92d857ae0d1b8e6a355cb6", size = 43218194, upload-time = "2026-05-18T20:12:19.077Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/81/12e6dacc56034065467879901b10626f9a4ddd257f4f1cc06846c3c0ff3a/gtsam_develop-4.3a1.dev202605181902-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:247a91c5abac405b31a5719ce80b6d751aefdf670c90797b597eca6bd93e96b8", size = 30500347, upload-time = "2026-05-18T20:12:22.568Z" },
-    { url = "https://files.pythonhosted.org/packages/f5/10/6a3945c1769f795b67a1d595b9b7fa704ea7b80d607e6bd636b228bba796/gtsam_develop-4.3a1.dev202605181902-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5fb30b0a9952d1c50dc2b8e4055eb71eac0528092cca79d5ab4bb134ec783c87", size = 31964275, upload-time = "2026-05-18T20:12:26.758Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/e9/35bfe2ce47073a3ba7538ab1b08afd1caff41ae3b19ef5f39d99870350eb/gtsam_develop-4.3a1.dev202605181902-cp313-cp313-macosx_10_15_universal2.whl", hash = "sha256:468a06560078fa73cd70e67f3f6371116951d68aaf5d4c2a392131b25e687f71", size = 43219794, upload-time = "2026-05-18T20:12:30.281Z" },
-    { url = "https://files.pythonhosted.org/packages/a9/fb/66ecabbcb9f081c83aa23454c49d0965cfcc6fea73c94d2621494b59af55/gtsam_develop-4.3a1.dev202605181902-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:bf73724e763ee54a5c51f20c6b7f1ee3367e9ea4a83de4b5251e39f4b1c4ec96", size = 30498042, upload-time = "2026-05-18T20:12:33.863Z" },
-    { url = "https://files.pythonhosted.org/packages/62/08/6b03b9e274b3a9e28cde8db4f4e27cb31a1a27dae5ac2e57524e3d4a01ae/gtsam_develop-4.3a1.dev202605181902-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c8b43cd66315a81e3ca8abc86bcbea08b5747f553631db9727e77705c48ab377", size = 31961338, upload-time = "2026-05-18T20:12:37.513Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/55/712ef3cba6912fb9cdb2a3c01f03a4d6f1c036a226e0f3b24171f99ba396/gtsam_develop-4.3a1.dev202605181902-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:fee148b72edf1b917c6339b7a65d15d48bada43fb9784945f43c093877e29287", size = 43236970, upload-time = "2026-05-18T20:12:41.678Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/ef/f03a97d9e66334868f4aa8ea3cd64a63a8cc0b9ab8c5195e3e6c00f89414/gtsam_develop-4.3a1.dev202605181902-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:6d540aafa4e3b4a9958e110acf92ac0e0f7ccf5e17347917f1a8ec1c4f900239", size = 30523321, upload-time = "2026-05-18T20:12:46.087Z" },
-    { url = "https://files.pythonhosted.org/packages/4f/46/fb01505d013b733c3df243e3a16fa415001a1c4c80feaef1dcb7ae00f48c/gtsam_develop-4.3a1.dev202605181902-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:109f92cd9d7691fffc8e1696d063134ed1126151b5eb62b08143facaeb91ac00", size = 31965149, upload-time = "2026-05-18T20:12:49.537Z" },
-]
-
-[[package]]
-name = "iniconfig"
-version = "2.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
-]
-
-[[package]]
 name = "kiwisolver"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -300,22 +268,20 @@ name = "master-code"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "gtsam-develop" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "omegaconf" },
-    { name = "scienceplots" },
+    { name = "pip" },
     { name = "scipy" },
     { name = "tqdm" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "gtsam-develop", specifier = ">=4.3a1.dev202605181902" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "omegaconf", specifier = ">=2.3.0" },
-    { name = "scienceplots", specifier = ">=2.2.1" },
+    { name = "pip", specifier = ">=26.1.1" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "tqdm", specifier = ">=4.67.3" },
 ]
@@ -573,21 +539,12 @@ wheels = [
 ]
 
 [[package]]
-name = "pluggy"
-version = "1.6.0"
+name = "pip"
+version = "26.1.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b6/48/cb9b7a682f6fe01a4221e1728941dd4ac3cd9090a17db3779d6ff490b602/pip-26.1.1.tar.gz", hash = "sha256:d36762751d156a4ee895de8af39aa0abeeeb577f93a2eca6ab62467bbf0f8a78", size = 1840400, upload-time = "2026-05-04T19:02:21.248Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
-]
-
-[[package]]
-name = "pygments"
-version = "2.20.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/eb/fea4d1d51c49832120f7f285d07306db3960f423a2612c6057caf3e8196f/pip-26.1.1-py3-none-any.whl", hash = "sha256:99cb1c2899893b075ff56e4ed0af55669a955b49ad7fb8d8603ecdaf4ed653fb", size = 1812777, upload-time = "2026-05-04T19:02:18.9Z" },
 ]
 
 [[package]]
@@ -597,22 +554,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
-]
-
-[[package]]
-name = "pytest"
-version = "9.0.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "iniconfig" },
-    { name = "packaging" },
-    { name = "pluggy" },
-    { name = "pygments" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c", size = 1572165, upload-time = "2026-04-07T17:16:18.027Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9", size = 375249, upload-time = "2026-04-07T17:16:16.13Z" },
 ]
 
 [[package]]
@@ -680,18 +621,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
-]
-
-[[package]]
-name = "scienceplots"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "matplotlib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/a5/5f858668ca1a513033a7f0d55cd12b0940a12e822f9f61f317ce344e07c6/scienceplots-2.2.1.tar.gz", hash = "sha256:51ad98c420e499d3284d07b6447a4b3aedd8ec122aca39ba91c58205226c408a", size = 17966, upload-time = "2026-02-25T01:26:54.603Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/22/14e7b20f7d11f3e9ea9b5ae6acf9ea695c423eee785906cd5c5914a841dc/scienceplots-2.2.1-py3-none-any.whl", hash = "sha256:a1a9f670cbf5b59d92cdd3250be85b079ee4cf08bcaf2ace5ef57995be0b6c42", size = 30237, upload-time = "2026-02-25T01:26:53.298Z" },
 ]
 
 [[package]]

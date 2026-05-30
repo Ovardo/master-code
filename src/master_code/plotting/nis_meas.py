@@ -4,7 +4,7 @@ from scipy.stats import chi2
 
 from master_code.plotting.thesis_style import thesis_figsize, save_figure, apply_thesis_style
 from master_code.logger import SlamLogger
-from master_code.association import NIS
+from master_code.data_association import NIS
 
 
 

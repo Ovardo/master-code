@@ -5,184 +5,10 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 
+from master_code.config import SlamConfig
 from master_code.paths import DATA_ROOT
-
-
-@dataclass(slots=True)
-class WheelOdometry:
-    velocity: float
-    steering: float
-    dt: float
-
-
-@dataclass(slots=True)
-class VictoriaParkStep:
-    odometry: list[WheelOdometry]
-    scan: np.ndarray
-    scan_time: float
-    scan_step: int
-
-
-# class VictoriaParkLoader:
-#     def __init__(self, data_folder: Path | None = None):
-#         if data_folder is None:
-#             data_folder = DATA_ROOT / "victoria_park" / "raw"
-
-#         dr = loadmat(str(data_folder / "aa3_dr"))
-#         lsr = loadmat(str(data_folder / "aa3_lsr2"))
-#         gps = loadmat(str(data_folder / "aa3_gpsx"))
-
-#         # LiDAR: cm -> m, ms -> s
-#         self.scans = lsr["LASER"] / 100.0
-#         self.scan_times = lsr["TLsr"].ravel() / 1000.0
-
-#         # Odometry: ms -> s
-#         self.odo_times = dr["time"].ravel() / 1000.0
-#         self.velocity = dr["speed"].ravel()
-#         self.steering = dr["steering"].ravel()
-
-#         # Optional, only for initial pose / plotting
-#         self.gps_times = gps["timeGps"].ravel() / 1000.0
-#         self.gps_x = gps["Lo_m"].ravel()
-#         self.gps_y = gps["La_m"].ravel()
-
-#         self.odo_dt = np.diff(self.odo_times)
-
-#     def iterate(self, num_steps: int | None = None) -> Iterator[VictoriaParkStep]:
-#         """
-#         Yield one SLAM step per LiDAR scan.
-
-#         Odometry is grouped between consecutive LiDAR scans by snapping each
-#         LiDAR timestamp to the latest preceding odometry timestamp.
-#         """
-
-#         # For each scan, find the latest odometry sample before the scan.
-#         scan_to_odo = np.searchsorted(self.odo_times, self.scan_times, side="right") - 1
-
-#         # Keep scans that occur after odometry has started.
-#         valid_scans = np.flatnonzero(scan_to_odo >= 0)
-
-#         if len(valid_scans) < 2:
-#             return
-
-#         start = valid_scans[1]
-#         stop = len(self.scan_times)
-
-#         if num_steps is not None:
-#             stop = min(stop, start + num_steps)
-
-#         scan_step = 0
-
-#         for scan_idx in range(start, stop):
-#             prev_scan_idx = scan_idx - 1
-
-#             i0 = scan_to_odo[prev_scan_idx]
-#             i1 = scan_to_odo[scan_idx]
-
-#             odometry = []
-#             for i in range(i0, i1):
-#                 odometry.append(
-#                     WheelOdometry(
-#                         velocity=float(self.velocity[i]),
-#                         steering=float(self.steering[i]),
-#                         dt=float(self.odo_dt[i]),
-#                     )
-#                 )
-
-#             yield VictoriaParkStep(
-#                 odometry=odometry,
-#                 scan=self.scans[scan_idx],
-#                 scan_time=float(self.scan_times[scan_idx]),
-#                 scan_step=scan_step,
-#             )
-
-#             scan_step += 1
-    
-#     @property
-#     def max_steps(self) -> int:
-#         return len(self.scan_times) - 1
-
-#     @property
-#     def lidar(self) -> np.ndarray:
-#         return np.column_stack([self.scan_times, self.scans])
-
-#     @property
-#     def odometry(self) -> np.ndarray:
-#         return np.column_stack([self.odo_times, self.velocity, self.steering])
-
-#     @property
-#     def gnss(self) -> np.ndarray:
-#         return np.column_stack([self.gps_times, self.gps_x, self.gps_y])
-
-#     @property
-#     def gnss_filtered(self) -> np.ndarray:
-#         gnss = self.gnss
-#         return np.delete(gnss, find_gnss_outliers(gnss), axis=0)
-
-#     @property
-#     def initial_pose(self) -> np.ndarray:
-#         return np.array([self.gps_x[0], self.gps_y[0], np.deg2rad(36.0)])
-
-
-
-
-GNSS_MAX_SPEED_M_S = 1
-GNSS_OUTLIER_MARGIN_M = 1.0
-
-# Helper function to identify large outliers in GNSS data based on speed and distance criteria.
-def find_gnss_outliers(
-    gnss: np.ndarray,
-    max_speed_m_s: float = GNSS_MAX_SPEED_M_S,
-    distance_margin_m: float = GNSS_OUTLIER_MARGIN_M,
-) -> np.ndarray:
-    """
-    Return indices of isolated GNSS samples that violate a speed bound.
-
-    A sample is marked as an outlier when it is too far from both immediate
-    neighbours to be reachable at ``max_speed_m_s``, while those neighbours are
-    mutually plausible over their combined time interval. The margin absorbs
-    normal GNSS noise so short sampling intervals do not become too strict.
-    """
-    times = gnss[:, 0]
-    positions = gnss[:, 1:3]
-
-    dt_prev = times[1:-1] - times[:-2]
-    dt_next = times[2:] - times[1:-1]
-
-    dist_prev = np.linalg.norm(positions[1:-1] - positions[:-2], axis=1)
-    dist_next = np.linalg.norm(positions[2:] - positions[1:-1], axis=1)
-
-    too_far_from_prev = dist_prev > max_speed_m_s * dt_prev + distance_margin_m
-    too_far_from_next = dist_next > max_speed_m_s * dt_next + distance_margin_m
-    
-    outlier_mask = ~np.isfinite(times) | ~np.all(np.isfinite(positions), axis=1)
-    outlier_mask[1:-1] |= (too_far_from_prev & too_far_from_next)
-
-    return np.flatnonzero(outlier_mask)
-
-
-
-
-
-
-
-
-
-# """
-# Dataset loader module. Handles loading from mat-files, unit conversion,
-# and dataset-specific synchronization.
-# """
-# from collections.abc import Iterator
-# from dataclasses import dataclass
-# from pathlib import Path
-
-# import gtsam
-# import numpy as np
-# from scipy.io import loadmat
-
-# from master_code.measurements import RelativePoseMeasurement, SlamStepInput
-# from master_code.paths import DATA_ROOT
-
+from master_code.preprocessing import extract_tree_measurements, preintegrate, relative_pose
+from master_code.slam import SlamStepInput
 
 
 @dataclass(slots=True)
@@ -200,10 +26,9 @@ class RawLidarStepInput:
     scan_step: int
 
 
-LidarStepInput = RawLidarStepInput
-
-
 class VictoriaParkLoader:
+    name = "victoria_park"
+
     def __init__(self, data_folder: Path | None = None):
         if data_folder is None:
             data_folder = DATA_ROOT / "victoria_park" / "raw"
@@ -374,9 +199,31 @@ class VictoriaParkLoader:
             )
             scan_step += 1
 
+    def iterate_slam(
+        self,
+        config: SlamConfig,
+        max_steps: int | None = None,
+    ) -> Iterator[SlamStepInput]:
+        for meas in self.iterate(max_steps):
+            delta_odo = []
+            delta_odo_covs = []
+
+            for odo in meas.odometry:
+                delta_odo.append(relative_pose(odo.velocity, odo.steering, odo.dt))
+                delta_odo_covs.append(config.noise.odom_cov_matrix * odo.dt)
+
+            delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
+
+            yield SlamStepInput(
+                relative_pose=delta_T,
+                relative_pose_cov=delta_cov,
+                measurements=extract_tree_measurements(meas.scan, config.sensor.max_range),
+                scan_time=float(meas.scan_time),
+            )
+
     @property
     def max_steps(self) -> int:
-        return len(self.lsr_timestamps) - 1
+        return max(0, self.lsr_timestamps.size - 2)
 
     @property
     def lidar(self) -> np.ndarray:
@@ -406,62 +253,42 @@ class VictoriaParkLoader:
         return np.array(
             [self.gnss_longitude[0], self.gnss_latitude[0], np.deg2rad(36)]
         ) 
+    
 
+GNSS_MAX_SPEED_M_S = 1
+GNSS_OUTLIER_MARGIN_M = 1.0
 
-# GNSS_MAX_SPEED_M_S = 1
-# GNSS_OUTLIER_MARGIN_M = 1.0
+# Helper function to identify large outliers in GNSS data based on speed and distance criteria.
+def find_gnss_outliers(
+    gnss: np.ndarray,
+    max_speed_m_s: float = GNSS_MAX_SPEED_M_S,
+    distance_margin_m: float = GNSS_OUTLIER_MARGIN_M,
+) -> np.ndarray:
+    """
+    Return indices of isolated GNSS samples that violate a speed bound.
 
-# # Helper function to identify large outliers in GNSS data based on speed and distance criteria.
-# def find_gnss_outliers(
-#     gnss: np.ndarray,
-#     max_speed_m_s: float = GNSS_MAX_SPEED_M_S,
-#     distance_margin_m: float = GNSS_OUTLIER_MARGIN_M,
-# ) -> np.ndarray:
-#     """
-#     Return indices of isolated GNSS samples that violate a speed bound.
+    A sample is marked as an outlier when it is too far from both immediate
+    neighbours to be reachable at ``max_speed_m_s``, while those neighbours are
+    mutually plausible over their combined time interval. The margin absorbs
+    normal GNSS noise so short sampling intervals do not become too strict.
+    """
+    times = gnss[:, 0]
+    positions = gnss[:, 1:3]
 
-#     A sample is marked as an outlier when it is too far from both immediate
-#     neighbours to be reachable at ``max_speed_m_s``, while those neighbours are
-#     mutually plausible over their combined time interval. The margin absorbs
-#     normal GNSS noise so short sampling intervals do not become too strict.
-#     """
-#     gnss = np.asarray(gnss, dtype=float)
-#     if gnss.ndim != 2 or gnss.shape[1] < 3:
-#         raise ValueError("gnss must be an array with columns [timestamp, x, y].")
+    dt_prev = times[1:-1] - times[:-2]
+    dt_next = times[2:] - times[1:-1]
 
-#     if len(gnss) < 3:
-#         return np.array([], dtype=int)
+    dist_prev = np.linalg.norm(positions[1:-1] - positions[:-2], axis=1)
+    dist_next = np.linalg.norm(positions[2:] - positions[1:-1], axis=1)
 
-#     times = gnss[:, 0]
-#     positions = gnss[:, 1:3]
+    too_far_from_prev = dist_prev > max_speed_m_s * dt_prev + distance_margin_m
+    too_far_from_next = dist_next > max_speed_m_s * dt_next + distance_margin_m
+    
+    outlier_mask = ~np.isfinite(times) | ~np.all(np.isfinite(positions), axis=1)
+    outlier_mask[1:-1] |= (too_far_from_prev & too_far_from_next)
 
-#     outlier_mask = ~np.isfinite(times) | ~np.all(np.isfinite(positions), axis=1)
+    return np.flatnonzero(outlier_mask)
 
-#     dt_prev = times[1:-1] - times[:-2]
-#     dt_next = times[2:] - times[1:-1]
-
-#     dist_prev = np.linalg.norm(positions[1:-1] - positions[:-2], axis=1)
-#     dist_next = np.linalg.norm(positions[2:] - positions[1:-1], axis=1)
-
-#     valid_triplet = (
-#         np.isfinite(dt_prev)
-#         & np.isfinite(dt_next)
-#         & np.isfinite(dist_prev)
-#         & np.isfinite(dist_next)
-#         & (dt_prev > 0.0)
-#         & (dt_next > 0.0)
-#     )
-
-#     too_far_from_prev = dist_prev > max_speed_m_s * dt_prev + distance_margin_m
-#     too_far_from_next = dist_next > max_speed_m_s * dt_next + distance_margin_m
-
-#     outlier_mask[1:-1] |= (
-#         valid_triplet
-#         & too_far_from_prev
-#         & too_far_from_next
-#     )
-
-#     return np.flatnonzero(outlier_mask)
 
 
     

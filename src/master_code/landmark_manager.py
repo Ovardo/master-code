@@ -15,15 +15,18 @@ class SupportingObservation:
 @dataclass
 class TentativeLandmark:
     position: np.ndarray
-    birth_step: int
-    last_seen_step: int
-    hit_count: int = 1
-    observed_steps: set[int] = field(default_factory=set)
     supporting_observations: list[SupportingObservation] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.position = np.asarray(self.position, dtype=float).reshape(2)
-        self.observed_steps.add(self.birth_step)
+
+    @property
+    def hit_count(self) -> int:
+        return len(self.supporting_observations)
+
+    @property
+    def last_seen_step(self) -> int:
+        return self.supporting_observations[-1].step
 
     def update(
         self,
@@ -36,57 +39,37 @@ class TentativeLandmark:
 
         Uses a simple running average for position. This is intentionally simple;
         it can later be replaced with a covariance-weighted update if desired.
+
+        At most one observation is recorded per timestep: the manager never matches
+        a landmark twice in the same step (see ``_find_best_match``), so every entry
+        in ``supporting_observations`` corresponds to a distinct timestep.
         """
         new_position = np.asarray(new_position, dtype=float).reshape(2)
         measurement = np.asarray(measurement, dtype=float).reshape(2)
 
-        # Only count as a new hit if observed at a new timestep
-        if step not in self.observed_steps:
-            self.hit_count += 1
-            self.observed_steps.add(step)
+        self.supporting_observations.append(
+            SupportingObservation(step=step, measurement=measurement)
+        )
 
         # Simple running average update
         alpha = 1.0 / self.hit_count
         self.position = (1.0 - alpha) * self.position + alpha * new_position
-
-        self.last_seen_step = step
-        self.supporting_observations.append(
-            SupportingObservation(
-                step=step, 
-                measurement=measurement,
-            )
-        )
-
-    def age(self, current_step: int) -> int:
-        return current_step - self.birth_step
 
     def steps_since_seen(self, current_step: int) -> int:
         return current_step - self.last_seen_step
 
     def is_confirmed(self, current_step: int, M: int, N: int) -> bool:
         """
-        M/N logic:
+        Sliding-window M/N logic:
         Confirm if landmark has been observed in at least M distinct timesteps
         during the last N timesteps (inclusive of current_step).
         """
-        # Alt 1: Fixed lifetime interpretation:
-        # return self.hit_count >= M # ()
-
-        # # Alt 2: Sliding window interpretation:
         window_start = current_step - N + 1
-        hits_in_window = sum(step >= window_start for step in self.observed_steps)
+        hits_in_window = sum(
+            obs.step >= window_start for obs in self.supporting_observations
+        )
         return hits_in_window >= M
-    
-    def can_still_be_confirmed(self, current_step: int, M: int, N: int) -> bool:
-        """
-        Return True if it is still possible for this tentative landmark to reach
-        M observations within its N-step tentative lifetime.
-        """
-        steps_used = self.age(current_step) + 1
-        future_steps_left = N - steps_used
-        max_possible_hits = self.hit_count + max(0, future_steps_left)
-        return max_possible_hits >= M
-    
+
 
 def get_tentative_landmark_manager(cfg: SlamConfig) -> TentativeLandmarkManager:
     """Factory function to create a TentativeLandmarkManager based on the config."""
@@ -204,9 +187,6 @@ class TentativeLandmarkManager:
     ) -> None:
         landmark = TentativeLandmark(
             position=position,
-            birth_step=step,
-            last_seen_step=step,
-            hit_count=1,
             supporting_observations=[SupportingObservation(step, measurement)],
         )
         self.tentative_landmarks.append(landmark)
@@ -233,12 +213,6 @@ class TentativeLandmarkManager:
         Remove tentative landmarks that can no longer reach M observations within
         their N-step confirmation window.
         """
-        # Alt 1: Fixed lifetime interpretation
-        # self.tentative_landmarks = [lm for lm in self.tentative_landmarks
-        #     if lm.can_still_be_confirmed(current_step, self.M, self.N)
-        # ]
-
-        # Alt 2: Sliding window interpretation
         self.tentative_landmarks = [
             lm for lm in self.tentative_landmarks
             if lm.steps_since_seen(current_step) <= self.N

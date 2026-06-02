@@ -3,8 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from master_code.config import SlamConfig
+
+# Sentinel cost for out-of-gate measurement/landmark pairs in the assignment
+# problem: large enough that the solver only picks such pairs when forced, after
+# which they are rejected (no association) rather than used.
+_GATED_OUT_COST = 1e9
 
 
 @dataclass
@@ -40,9 +46,9 @@ class TentativeLandmark:
         Uses a simple running average for position. This is intentionally simple;
         it can later be replaced with a covariance-weighted update if desired.
 
-        At most one observation is recorded per timestep: the manager never matches
-        a landmark twice in the same step (see ``_find_best_match``), so every entry
-        in ``supporting_observations`` corresponds to a distinct timestep.
+        At most one observation is recorded per timestep: association is one-to-one
+        (see ``_associate``), so a landmark is matched by at most one measurement per
+        step and every entry in ``supporting_observations`` is a distinct timestep.
         """
         new_position = np.asarray(new_position, dtype=float).reshape(2)
         measurement = np.asarray(measurement, dtype=float).reshape(2)
@@ -132,14 +138,18 @@ class TentativeLandmarkManager:
         if new_tentative_landmarks.shape[0] != M:
             raise ValueError(f"Expected new_tentative_landmarks to have shape ({M}, 2), got {new_tentative_landmarks.shape}")
     
+        # Associate all of this step's measurements to existing tentatives jointly,
+        # so each landmark is claimed by its globally-best measurement rather than
+        # the first one processed.
+        matches = self._associate(new_tentative_landmarks)
+
         for i in range(M):
             W_l = new_tentative_landmarks[i]
             z = unassociated_measurements[i]
-
-            match_idx = self._find_best_match(W_l, current_step)
+            match_idx = matches[i]
 
             # Landmark not matched to existing tentative, spawn new one. Otherwise, update matched tentative.
-            if match_idx is None:
+            if match_idx < 0:
                 self._spawn_tentative(
                     step=current_step,
                     position=W_l,
@@ -157,27 +167,50 @@ class TentativeLandmarkManager:
 
         return confirmed
 
-    def _find_best_match(self, measurement_position: np.ndarray, current_step: int) -> int | None:
+    def _associate(self, measurement_positions: np.ndarray) -> np.ndarray:
         """
-        Find nearest tentative landmark within association gate.
+        Jointly associate this step's measurements to existing tentative landmarks.
 
-        Returns index into self.tentative_landmarks, or None if no valid match found.
+        Solves a one-to-one assignment that minimizes the total Euclidean distance
+        between measurements and landmarks (Hungarian algorithm), subject to the
+        association gate. This avoids the order dependence of greedy per-measurement
+        matching, where the first measurement to claim a landmark wins even if a
+        later measurement is a better fit.
+
+        Parameters
+        ----------
+        measurement_positions : np.ndarray, shape (M, 2)
+            World-frame positions of this step's measurements.
+
+        Returns
+        -------
+        matches : np.ndarray, shape (M,), dtype int
+            ``matches[i]`` is the index into ``self.tentative_landmarks`` assigned to
+            measurement ``i``, or ``-1`` if it has no in-gate match (spawn a new one).
         """
-        best_idx = None
-        best_dist = np.inf
+        num_measurements = measurement_positions.shape[0]
+        matches = np.full(num_measurements, -1, dtype=int)
 
-        for i, landmark in enumerate(self.tentative_landmarks):
-            # skip landmarks already updated this step
-            if landmark.last_seen_step == current_step:
-                continue
+        landmarks = self.tentative_landmarks
+        if num_measurements == 0 or len(landmarks) == 0:
+            return matches
 
-            dist = np.linalg.norm(measurement_position - landmark.position)
+        landmark_positions = np.array([lm.position for lm in landmarks])  # (L, 2)
+        # Pairwise distances, shape (M, L).
+        distances = np.linalg.norm(
+            measurement_positions[:, None, :] - landmark_positions[None, :, :], axis=2
+        )
 
-            if dist < self.association_gate and dist < best_dist:
-                best_dist = dist
-                best_idx = i
+        # Discourage the solver from using out-of-gate pairs by making them very
+        # expensive; any that still slip through are rejected below.
+        cost = np.where(distances < self.association_gate, distances, _GATED_OUT_COST)
 
-        return best_idx
+        row_idx, col_idx = linear_sum_assignment(cost)
+        for r, c in zip(row_idx, col_idx):
+            if distances[r, c] < self.association_gate:
+                matches[r] = c
+
+        return matches
 
     def _spawn_tentative(
         self,

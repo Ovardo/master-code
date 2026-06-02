@@ -187,7 +187,7 @@ def run_slam(
             r = T_kp1.range(lm, J_r_T, J_r_lm)
             b = T_kp1.bearing(lm, J_b_T, J_b_lm).theta()
 
-            if r < config.sensor.max_range and abs(b) < np.deg2rad(config.sensor.fov_deg / 2):
+            if r < config.sensor.range_local and abs(b) < config.sensor.bearing_local_rad:
                 local_landmarks.append(lm)
                 local_landmarks_keys.append(lm_key)
                 local_predicted_measurements.append(np.array([r, b]))
@@ -207,7 +207,7 @@ def run_slam(
 
         t0 = time.perf_counter()
         cov_query = [key_kp1] + local_landmarks_keys
-        support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query)
+        support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
         P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
         diagnostics.duration_covariance_extraction = time.perf_counter() - t0
@@ -282,7 +282,7 @@ def run_slam(
         diagnostics.num_local_landmarks = len(local_landmarks_keys)
         diagnostics.num_associated_measurement = int(np.sum(is_associated))
         diagnostics.num_unassociated_measurement = int(np.sum(~is_associated))
-        diagnostics.num_support_cliques = support_size
+        diagnostics.num_support_cliques = support_size # TODO: comment out
 
         diagnostics_steps.append(diagnostics)
 

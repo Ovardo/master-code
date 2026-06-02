@@ -136,17 +136,21 @@ class SensorConfig:
     """Sensor configuration parameters.
     
     Attributes:
-        max_range (float): Maximum sensor range in meters. Must be positive.
-        fov_deg (float): Sensor field of view in degrees. Must be in (0, 360].
+        range_local (float): Local map filtering range in meters. Must be positive.
+        bearing_local_deg (float): Local map filtering bearing half-width in degrees. Must be in (0, 180].
     """
-    max_range: float = 50.0
-    fov_deg: float = 250.0
+    range_local: float = 50.0
+    bearing_local_deg: float = 125.0
 
     def __post_init__(self):
-        if self.max_range <= 0:
-            raise ValueError(f"max_range must be positive, got {self.max_range}")
-        if not (0 < self.fov_deg <= 360):
-            raise ValueError(f"fov_deg must be in (0, 360], got {self.fov_deg}")
+        if self.range_local <= 0:
+            raise ValueError(f"range_local must be positive, got {self.range_local}")
+        if not (0 < self.bearing_local_deg <= 180):
+            raise ValueError(f"bearing_local_deg must be in (0, 180], got {self.bearing_local_deg}")
+
+    @property
+    def bearing_local_rad(self) -> float:
+        return np.deg2rad(self.bearing_local_deg)
 
 
 @dataclass
@@ -157,8 +161,6 @@ class AssociationConfig:
         method (str): Association method. Options: "gt" (only for sim), "jcbb", "ml", "nn", "cnn".
         alpha_individual (float): Confidence level for individual compatibility test.
         alpha_joint (float): Confidence level for joint compatibility test.
-        range_gate (float): Local feature filtering radius [m].
-        fov_gate_deg (float): Local feature filtering field of view [deg].
     """
     method: str = "jcbb"
     alpha_individual: float = 0.999

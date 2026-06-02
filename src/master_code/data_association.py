@@ -125,6 +125,7 @@ def _JCBBrec(z, zbar, S, alpha_joint, g2, j, a, ic, abest):
             abest = _JCBBrec(z, zbar, S, alpha_joint, g2, j+1, a.copy(), ic, abest)
             ic[j:, i] = ici  # set landmark available again for next round.
 
+    # Try leaving measurement j unassociated, but only if we can still beat the best solution.
     if n + (M - j - 2) >= num_associations(abest):
         a[j] = -1
         abest = _JCBBrec(z, zbar, S, alpha_joint, g2, j+1, a, ic, abest)

@@ -146,80 +146,80 @@ class VictoriaParkLoader:
             )
             scan_step += 1
 
-    def iterate_synced(self, max_steps: int | None = None) -> Iterator[RawLidarStepInput]:
-        """
-        Iterate over LiDAR steps snapped to the preceding odometry sample.
+    # def iterate_synced(self, max_steps: int | None = None) -> Iterator[RawLidarStepInput]:
+    #     """
+    #     Iterate over LiDAR steps snapped to the preceding odometry sample.
 
-        This simpler synchronization uses complete odometry intervals only:
-        every LiDAR timestamp is matched to the latest odometry timestamp before
-        it, and the returned odometry spans between two consecutive matched
-        odometry timestamps. No partial odometry intervals are clipped.
-        """
-        preceding_odo_idx = np.searchsorted(
-            self.odo_timestamps,
-            self.lsr_timestamps,
-            side="right",
-        ) - 1
+    #     This simpler synchronization uses complete odometry intervals only:
+    #     every LiDAR timestamp is matched to the latest odometry timestamp before
+    #     it, and the returned odometry spans between two consecutive matched
+    #     odometry timestamps. No partial odometry intervals are clipped.
+    #     """
+    #     preceding_odo_idx = np.searchsorted(
+    #         self.odo_timestamps,
+    #         self.lsr_timestamps,
+    #         side="right",
+    #     ) - 1
 
-        valid_lidar_indices = np.flatnonzero(preceding_odo_idx >= 0)
-        if valid_lidar_indices.size < 2:
-            return
+    #     valid_lidar_indices = np.flatnonzero(preceding_odo_idx >= 0)
+    #     if valid_lidar_indices.size < 2:
+    #         return
 
-        first_valid_lidar_idx = int(valid_lidar_indices[0])
-        start_lidar_idx = first_valid_lidar_idx + 1
-        stop_lidar_idx = self.lsr_timestamps.size
-        scan_step = 0
+    #     first_valid_lidar_idx = int(valid_lidar_indices[0])
+    #     start_lidar_idx = first_valid_lidar_idx + 1
+    #     stop_lidar_idx = self.lsr_timestamps.size
+    #     scan_step = 0
 
-        if max_steps is not None:
-            stop_lidar_idx = min(stop_lidar_idx, start_lidar_idx + max_steps)
+    #     if max_steps is not None:
+    #         stop_lidar_idx = min(stop_lidar_idx, start_lidar_idx + max_steps)
 
-        for lidar_idx in range(start_lidar_idx, stop_lidar_idx):
-            first_odo_idx = preceding_odo_idx[lidar_idx - 1]
-            last_odo_idx = preceding_odo_idx[lidar_idx]
+    #     for lidar_idx in range(start_lidar_idx, stop_lidar_idx):
+    #         first_odo_idx = preceding_odo_idx[lidar_idx - 1]
+    #         last_odo_idx = preceding_odo_idx[lidar_idx]
 
-            odometry = [
-                WheelOdometry(
-                    velocity=float(v),
-                    steering=float(a),
-                    dt=float(t1 - t0),
-                )
-                for v, a, t0, t1 in zip(
-                    self.odo_interval_velocity[first_odo_idx:last_odo_idx],
-                    self.odo_interval_steering[first_odo_idx:last_odo_idx],
-                    self.odo_interval_t0[first_odo_idx:last_odo_idx],
-                    self.odo_interval_t1[first_odo_idx:last_odo_idx],
-                )
-            ]
+    #         odometry = [
+    #             WheelOdometry(
+    #                 velocity=float(v),
+    #                 steering=float(a),
+    #                 dt=float(t1 - t0),
+    #             )
+    #             for v, a, t0, t1 in zip(
+    #                 self.odo_interval_velocity[first_odo_idx:last_odo_idx],
+    #                 self.odo_interval_steering[first_odo_idx:last_odo_idx],
+    #                 self.odo_interval_t0[first_odo_idx:last_odo_idx],
+    #                 self.odo_interval_t1[first_odo_idx:last_odo_idx],
+    #             )
+    #         ]
 
-            yield RawLidarStepInput(
-                odometry=odometry,
-                scan=self.lsr_scans[lidar_idx],
-                scan_time=self.lsr_timestamps[lidar_idx],
-                scan_step=scan_step,
-            )
-            scan_step += 1
+    #         yield RawLidarStepInput(
+    #             odometry=odometry,
+    #             scan=self.lsr_scans[lidar_idx],
+    #             scan_time=self.lsr_timestamps[lidar_idx],
+    #             scan_step=scan_step,
+    #         )
+    #         scan_step += 1
 
-    def iterate_slam(
-        self,
-        config: SlamConfig,
-        max_steps: int | None = None,
-    ) -> Iterator[SlamStepInput]:
-        for meas in self.iterate(max_steps):
-            delta_odo = []
-            delta_odo_covs = []
+    # def iterate_slam(
+    #     self,
+    #     config: SlamConfig,
+    #     max_steps: int | None = None,
+    # ) -> Iterator[SlamStepInput]:
+    #     for meas in self.iterate(max_steps):
+    #         delta_odo = []
+    #         delta_odo_covs = []
 
-            for odo in meas.odometry:
-                delta_odo.append(relative_pose(odo.velocity, odo.steering, odo.dt))
-                delta_odo_covs.append(config.noise.odom_cov_matrix * odo.dt)
+    #         for odo in meas.odometry:
+    #             delta_odo.append(relative_pose(odo.velocity, odo.steering, odo.dt))
+    #             delta_odo_covs.append(config.noise.odom_cov_matrix * odo.dt)
 
-            delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
+    #         delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
 
-            yield SlamStepInput(
-                relative_pose=delta_T,
-                relative_pose_cov=delta_cov,
-                measurements=extract_tree_measurements(meas.scan, config.sensor.max_range),
-                scan_time=float(meas.scan_time),
-            )
+    #         yield SlamStepInput(
+    #             relative_pose=delta_T,
+    #             relative_pose_cov=delta_cov,
+    #             measurements=extract_tree_measurements(meas.scan, config.sensor.range_local),
+    #             scan_time=float(meas.scan_time),
+    #         )
 
     @property
     def max_steps(self) -> int:

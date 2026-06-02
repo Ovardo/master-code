@@ -299,9 +299,9 @@ class GraphSLAM:
         local_lm_keys = []
         
         def is_inside_gate(r: float, b: float) -> bool:
-            inside_range = r < self.cfg.sensor.max_range
-            inside_fov = np.abs(b) < np.deg2rad(self.cfg.sensor.fov_deg) / 2
-            return inside_range and inside_fov
+            inside_range = r < self.cfg.sensor.range_local
+            inside_bearing = np.abs(b) < self.cfg.sensor.bearing_local_rad
+            return inside_range and inside_bearing
 
         for j in self.landmark_keys:
             lm_j = self.isam2.calculateEstimatePoint2(j) # world frame

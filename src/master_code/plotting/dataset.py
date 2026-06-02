@@ -4,10 +4,9 @@ from matplotlib.colors import ListedColormap
 from matplotlib.patches import Rectangle
 from matplotlib.widgets import CheckButtons
 
-
 from master_code.loaders.victoria_park import VictoriaParkLoader, find_gnss_outliers
-from master_code.preprocessing import detect_trees
 from master_code.paths import FIGURES_ROOT
+from master_code.preprocessing import detect_trees
 
 RANGE_CMAP = "viridis_r"
 LIDAR_INFINITY_RANGE = 80.0
@@ -18,7 +17,10 @@ SCAN_LINE_COLOR = "#22d3ee"
 def plot_sensor_timing(lidar, odometry, gnss, window_seconds=2):
     T_lsr = lidar[:, 0]
     T_odo = odometry[:, 0]
-    T_gps = gnss[:, 0]
+    T_gps = gnss[1:, 0]
+    lsr_idx = np.arange(1, len(T_lsr) + 1)
+    odo_idx = np.arange(1, len(T_odo) + 1)
+    gps_idx = np.arange(2, len(gnss) + 1)
 
     lsr_dt = np.diff(T_lsr)
     odo_dt = np.diff(T_odo)
@@ -37,22 +39,47 @@ def plot_sensor_timing(lidar, odometry, gnss, window_seconds=2):
     t0 = min(T_lsr[0], T_odo[0], T_gps[0])
     t1 = t0 + window_seconds
 
-    T_lsr = T_lsr[(T_lsr >= t0) & (T_lsr <= t1)] - t0
-    T_odo = T_odo[(T_odo >= t0) & (T_odo <= t1)] - t0
-    T_gps = T_gps[(T_gps >= t0) & (T_gps <= t1)] - t0
+    lsr_mask = (T_lsr >= t0) & (T_lsr <= t1)
+    odo_mask = (T_odo >= t0) & (T_odo <= t1)
+    gps_mask = (T_gps >= t0) & (T_gps <= t1)
 
-    plt.figure(figsize=(10, 5))
+    T_lsr = T_lsr[lsr_mask] - t0
+    T_odo = T_odo[odo_mask] - t0
+    T_gps = T_gps[gps_mask] - t0
+    lsr_idx = lsr_idx[lsr_mask]
+    odo_idx = odo_idx[odo_mask]
+    gps_idx = gps_idx[gps_mask]
 
-    plt.vlines(T_lsr, 0, 1, color='r', label=f'Laser scan times ({avg_lsr_freq:.2f} Hz, {avg_lsr_sample_time*1000:.2f} ms)')
-    plt.vlines(T_odo, 0, 0.5, color='b', label=f'Odometry times ({avg_odo_freq:.2f} Hz, {avg_odo_sample_time*1000:.2f} ms)')
-    plt.vlines(T_gps, 0, 1.5, color='g', label=f'gnss times')
-    plt.title("Timing of Laser Scans, Odometry, and gnss Measurements")
-    plt.xlabel("Time (s)")
-    plt.ylim(0, 1.75)
-    plt.yticks([])
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
+    fig, ax = plt.subplots(figsize=(8, 1.5), constrained_layout=True)
+
+    ax.vlines(T_lsr, 0, 0.4, color='r', label=f'LiDAR')
+    ax.vlines(T_odo, 0, 0.2, color='b', label=f'Odometry')
+    # ax.vlines(T_gps, 0, 0.5, color='g', label=f'GNSS')
+
+    for times, indices, label_y, color in (
+        (T_lsr, lsr_idx, 0.42, "r"),
+        (T_odo, odo_idx, 0.22, "b"),
+        # (T_gps, gps_idx, 0.52, "g"),
+    ):
+        for time, index in zip(times, indices):
+            ax.text(
+                time,
+                label_y,
+                str(index),
+                color=color,
+                fontsize=8,
+                ha="center",
+                va="bottom",
+                rotation=0,
+            )
+
+    # plt.title("Timing of Laser Scans, Odometry, and gnss Measurements")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylim(0, 0.9)
+    ax.set_yticks([])
+    ax.legend(ncol=3)
+    ax.grid()
+    fig.savefig(FIGURES_ROOT / f"sensor_timing_window.pdf")
 
 
 def plot_raw_gps(gnss, t0=None, lidar_scans_times=None):
@@ -600,22 +627,29 @@ def main():
     odometry = data_loader.odometry
     gnss = data_loader.gnss
 
-    plot_gnss(gnss)
-    plot_sensor_timing(lidar, odometry, gnss, window_seconds=1400)
-    plot_raw_measurements(lidar, odometry, gnss)
+    # plot_gnss(gnss)
+    plot_sensor_timing(lidar, odometry, gnss, window_seconds=0.68)
+    # plot_raw_measurements(lidar, odometry, gnss)
 
-    fig = plot_raw_odometry(odometry)
-    fig.set_size_inches(11.0, 4.0)  # width, height in inches
-    fig.savefig(f"{FIGURES_ROOT}/odometry.pdf", bbox_inches="tight")
+    # fig = plot_raw_odometry(odometry)
+    # fig.set_size_inches(11.0, 4.0)  # width, height in inches
+    # fig.savefig(f"{FIGURES_ROOT}/odometry.pdf", bbox_inches="tight")
 
-    fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
-    fig.set_size_inches(6.0, 5.5)  # width, height in inches
-    fig.savefig(f"{FIGURES_ROOT}/gnss.pdf", bbox_inches="tight")
+    # fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
+    # fig.set_size_inches(6.0, 5.5)  # width, height in inches
+    # fig.savefig(f"{FIGURES_ROOT}/gnss.pdf", bbox_inches="tight")
     
-    fig = plot_lidar_tree_detection_summary(lidar)
-    fig.set_size_inches(11.0, 5.5)  # width, height in inches
-    fig.savefig(f"{FIGURES_ROOT}/lidar.pdf", bbox_inches="tight")
+    # fig = plot_lidar_tree_detection_summary(lidar)
+    # fig.set_size_inches(11.0, 5.5)  # width, height in inches
+    # fig.savefig(f"{FIGURES_ROOT}/lidar.pdf", bbox_inches="tight")
 
+    # outliers_idx = find_gnss_outliers(gnss)
+    # fig, ax = plt.subplots(figsize=(6, 6), constrained_layout=True)
+    # ax.scatter(gnss[:,1], gnss[:,2], s=10, color="steelblue", label="gnss")
+    # ax.scatter(gnss[outliers_idx,1], gnss[outliers_idx,2], s=10, color="red", label="gnss outliers")
+    # ax.legend()
+    # ax.grid(True, which="both", linewidth=0.4)
+    # fig.savefig(f"{FIGURES_ROOT}/gnss_outliers.pdf", bbox_inches="tight")
     plt.show()
 
 if __name__ == "__main__":

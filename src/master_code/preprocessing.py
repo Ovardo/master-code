@@ -104,10 +104,10 @@ def preintegrate(
     return T_int, T_int_cov
 
 
-def extract_tree_measurements(scan: np.ndarray, max_range: float) -> np.ndarray:
+def extract_tree_measurements(scan: np.ndarray, range_limit: float) -> np.ndarray:
     """Convert one raw lidar scan to filtered range-bearing tree measurements."""
     measurements = np.asarray(detect_trees(scan), dtype=float).reshape(-1, 2)
-    return measurements[measurements[:, 0] < max_range]
+    return measurements[measurements[:, 0] < range_limit]
 
 
 def detect_trees(scan):
@@ -318,7 +318,6 @@ def detect_trees(scan):
 
 
  
-
 
 
 

@@ -15,8 +15,8 @@ def get_sensor_model(cfg: SlamConfig) -> RangeBearing:
     return RangeBearing(
         sigma_range=cfg.noise.sigma_range,
         sigma_bearing=cfg.noise.sigma_bearing_rad,
-        max_range=cfg.sensor.max_range,
-        max_fov=np.deg2rad(cfg.sensor.fov_deg),
+        range_local=cfg.sensor.range_local,
+        bearing_local_rad=cfg.sensor.bearing_local_rad,
     )
 
 
@@ -25,8 +25,8 @@ class RangeBearing:
     """GTSAM implementation of range and bearing measurement model."""
     sigma_range: float
     sigma_bearing: float
-    max_range: float  # [m] (currently not used)
-    max_fov: float  # [rad] (currently not used)
+    range_local: float  # [m] (currently not used)
+    bearing_local_rad: float  # [rad] (currently not used)
     # sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
     
     def _h(self, T_k: gtsam.Pose2, l_i: np.ndarray[np.float64], filter: bool = False) -> np.ndarray:
@@ -47,7 +47,7 @@ class RangeBearing:
         r = T_k.range(l_i)
         b = T_k.bearing(l_i).theta()
 
-        if filter and (r > self.max_range or abs(b) > self.max_fov/2):
+        if filter and (r > self.range_local or abs(b) > self.bearing_local_rad):
             return np.array([np.inf, np.inf])
 
         return np.array([r, b])
@@ -151,8 +151,8 @@ class RangeBearing:
             numpy_model = RangeBearingNumpy(
                 sigma_range=self.sigma_range,
                 sigma_bearing=self.sigma_bearing,
-                max_range=self.max_range,
-                max_fov=self.max_fov,
+                range_local=self.range_local,
+                bearing_local_rad=self.bearing_local_rad,
             )
             H1_ = numpy_model.H_x(x, l_i)
             H2_ = numpy_model.H_m(x, l_i)
@@ -259,8 +259,8 @@ class RangeBearingNumpy:
     """Numpy implementation of range and bearing measurement model."""
     sigma_range: float
     sigma_bearing: float
-    max_range: float  # [m] (currently not used)
-    max_fov: float  # [rad] (currently not used)
+    range_local: float  # [m] (currently not used)
+    bearing_local_rad: float  # [rad] (currently not used)
     # sensor_offset: np.ndarray = np.zeros(2)  # [x_offset, y_offset] in robot frame
     
     def h_(self, x: np.ndarray, m_i: np.ndarray) -> np.ndarray:

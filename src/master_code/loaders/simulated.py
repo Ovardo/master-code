@@ -38,7 +38,7 @@ class SimulatedDataLoader:
     ) -> Iterator[SlamStepInput]:
         for meas in self.iterate(max_steps):
             yield SlamStepInput(
-                relative_pose=gtsam.Pose2(*meas["relative_pose"]),
+                relative_pose=gtsam.Pose2(*meas["relative_pose"]) if meas["relative_pose"] is not None else None,
                 relative_pose_cov=np.asarray(config.noise.odom_cov_matrix, dtype=float),
                 measurements=np.asarray(meas["measurements"], dtype=float).reshape(-1, 2),
                 scan_time=float(meas["scan_time"]),
@@ -51,12 +51,15 @@ class SimulatedDataLoader:
             max_steps = self.max_steps
 
         for scan_step in range(max_steps):
-            dx, dy, dtheta = self.odometry[scan_step]
-            measurement_index = scan_step + 1
+            if scan_step == 0:
+                relative_pose = None 
+            else:
+                relative_pose = self.odometry[scan_step-1]
+            measurement_index = scan_step
             measurements = self.measurements[measurement_index]
 
             yield {
-                'relative_pose': np.array([dx, dy, dtheta], dtype=float),
+                'relative_pose': relative_pose,
                 'measurements': measurements,
                 'scan_step': scan_step,
                 'scan_time': float(measurement_index),

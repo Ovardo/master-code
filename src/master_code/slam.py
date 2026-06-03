@@ -20,8 +20,8 @@ from master_code.utils import pose2_to_array, reorder_covariance_naive
 
 @dataclass(slots=True)
 class SlamStepInput:
-    relative_pose: gtsam.Pose2
-    relative_pose_cov: np.ndarray
+    relative_pose: gtsam.Pose2 | None
+    relative_pose_cov: np.ndarray | None
     measurements: np.ndarray
     scan_time: float
 
@@ -88,6 +88,7 @@ def run_slam(
     show_plots: bool = False,
     save_plots: bool = True,
 ) -> None:
+    # ======= Setup ========
     logger = SlamLogger(output_dir, config.logging)
 
     if num_steps is None:
@@ -96,8 +97,11 @@ def run_slam(
         num_steps = min(dataset.max_steps, num_steps)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Copy config to output_dir for reproducibility.
     config.save(output_dir / "config.yaml")
 
+    # ======= Initialize SLAM system ========
+    # iSAM2 stores the factor graph estimate; new_factors/new_values are the next update batch.
     slam = SlamState(
         isam2=gtsam.ISAM2(),
         new_factors=gtsam.NonlinearFactorGraph(),
@@ -106,8 +110,10 @@ def run_slam(
         landmark_keys=[],
     )
 
+    # Responsible for initializing landmarks once enough evidence has accumulated.
     manager = get_tentative_landmark_manager(config)
 
+    # Noise models.
     prior_noise = gtsam.noiseModel.Diagonal.Sigmas([
         config.noise.sigma_init_pose_x,
         config.noise.sigma_init_pose_y,
@@ -120,8 +126,10 @@ def run_slam(
         config.noise.sigma_range,
     ])
 
+    # Logging.
     diagnostics_steps = []
 
+    # ======= Add Prior Factor ========
     prior_mean = gtsam.Pose2(*dataset.initial_pose)
 
     slam.new_values.insert(X(0), prior_mean)
@@ -135,41 +143,55 @@ def run_slam(
         )
     )
 
+    # Update iSAM2 With Anchoring Factor 
     slam.update_and_clear()
 
+    # ======= Main Loop ========
     t_run_start = time.perf_counter()
 
     for k, meas in tqdm(enumerate(dataset.iterate_slam(config, num_steps)), total=num_steps, desc="SLAM"):
         diagnostics = StepDiagnostics()
         t_step = time.perf_counter()
 
-        delta_T = meas.relative_pose
-        delta_cov = meas.relative_pose_cov
+        # ======= Current Pose ========
+        pose_key = X(k)
 
-        key_k = X(k)
-        key_kp1 = X(k + 1)
-        slam.pose_keys.append(key_kp1)
+        # ======= Predict and Add Odometry Factor ========
+        if meas.relative_pose is not None:
+            delta_T = meas.relative_pose
+            delta_cov = meas.relative_pose_cov
 
-        T_k = slam.isam2.calculateEstimatePose2(key_k)
-        T_kp1 = T_k.compose(delta_T)
-        slam.new_values.insert(key_kp1, T_kp1)
+            key_prev = X(k - 1)
+            slam.pose_keys.append(pose_key)
 
-        delta_cov_model = gtsam.noiseModel.Gaussian.Covariance(delta_cov)
-        slam.new_factors.add(
-            gtsam.BetweenFactorPose2(
-                key1=key_k,
-                key2=key_kp1,
-                relativePose=delta_T,
-                noiseModel=delta_cov_model,
+            # Add an initial guess for the new pose.
+            T_prev = slam.isam2.calculateEstimatePose2(key_prev)
+            T_pose = T_prev.compose(delta_T)
+            slam.new_values.insert(pose_key, T_pose)
+
+            # Convert integrated noise to a GTSAM noise model.
+            delta_cov_model = gtsam.noiseModel.Gaussian.Covariance(delta_cov)
+            slam.new_factors.add(
+                gtsam.BetweenFactorPose2(
+                    key1=key_prev,
+                    key2=pose_key,
+                    relativePose=delta_T,
+                    noiseModel=delta_cov_model,
+                )
             )
-        )
 
-        t0 = time.perf_counter()
-        slam.update_and_clear()
-        diagnostics.add_time("duration_optimization", time.perf_counter() - t0)
+            # ======= Update iSAM2 With Predicted Pose ========
+            t0 = time.perf_counter()
+            slam.update_and_clear()
+            diagnostics.add_time("duration_optimization", time.perf_counter() - t0)
+        else:
+            # No motion into X(0); process measurements at the prior estimate.
+            T_pose = slam.isam2.calculateEstimatePose2(pose_key)
 
+        # ======= Process Measurements ========
         measurements = meas.measurements
 
+        # ======= Extract Local Predicted Measurements and Jacobians ========
         local_landmarks = []
         local_landmarks_keys = []
         local_predicted_measurements = []
@@ -184,8 +206,8 @@ def run_slam(
             J_b_T = np.zeros((1, 3), order="F")
             J_b_lm = np.zeros((1, 2), order="F")
 
-            r = T_kp1.range(lm, J_r_T, J_r_lm)
-            b = T_kp1.bearing(lm, J_b_T, J_b_lm).theta()
+            r = T_pose.range(lm, J_r_T, J_r_lm)
+            b = T_pose.bearing(lm, J_b_T, J_b_lm).theta()
 
             if r < config.sensor.range_local and abs(b) < config.sensor.bearing_local_rad:
                 local_landmarks.append(lm)
@@ -194,26 +216,32 @@ def run_slam(
                 local_jacobians_pose.append(np.vstack((J_r_T, J_b_T)))
                 local_jacobians_landmarks.append(np.vstack((J_r_lm, J_b_lm)))
 
+        # Convert to arrays for downstream processing.
         local_landmarks = np.asarray(local_landmarks, dtype=float).reshape(-1, 2)
         local_predicted_measurements = np.asarray(local_predicted_measurements, dtype=float).reshape(-1, 2)
 
+        # ======= Calculate Innovation Covariance ========
         n = len(local_landmarks_keys)
 
+        # Form joint measurement noise covariance and Jacobian.
         R = np.kron(np.eye(n), config.noise.range_bearing_cov_matrix)
         H = np.zeros((2 * n, 3 + 2 * n), order="F")
         for i in range(n):
             H[2 * i:2 * i + 2, 0:3] = local_jacobians_pose[i]
             H[2 * i:2 * i + 2, 3 + 2 * i:3 + 2 * i + 2] = local_jacobians_landmarks[i]
 
+        # Recover joint marginal covariance from the Bayes tree.
         t0 = time.perf_counter()
-        cov_query = [key_kp1] + local_landmarks_keys
+        cov_query = [pose_key] + local_landmarks_keys
         support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
         P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
         diagnostics.duration_covariance_extraction = time.perf_counter() - t0
 
+        # Innovation covariance for local predicted measurements.
         S = H @ P @ H.T + R
 
+        # ======= Perform Data Association ========
         t0 = time.perf_counter()
         association = JCBB_association(
             measurements,
@@ -224,14 +252,16 @@ def run_slam(
         )
         diagnostics.duration_association = time.perf_counter() - t0
 
+        # ======= Handle Associated Measurements ========
         is_associated = association >= 0
         associated_measurements = measurements[is_associated]
         associated_landmarks_keys = [local_landmarks_keys[i] for i in association[is_associated]]
 
+        # Add range-bearing factors for associated measurements.
         for (r, b), lm_key in zip(associated_measurements, associated_landmarks_keys):
             slam.new_factors.add(
                 gtsam.BearingRangeFactor2D(
-                    poseKey=key_kp1,
+                    poseKey=pose_key,
                     pointKey=lm_key,
                     measuredBearing=gtsam.Rot2(b),
                     measuredRange=r,
@@ -239,26 +269,31 @@ def run_slam(
                 )
             )
 
+        # ======= Handle Unassociated Measurements ========
         unassociated_measurements = measurements[~is_associated]
 
+        # Project unassociated measurements from the body frame to the world frame.
         tentative_landmarks = []
         for r, b in unassociated_measurements:
             B_lm = gtsam.Rot2(b).rotate(gtsam.Point2(r, 0.0))
-            W_lm = T_kp1.transformFrom(B_lm)
+            W_lm = T_pose.transformFrom(B_lm)
             tentative_landmarks.append(W_lm)
 
+        # Add tentative landmarks to the manager and get confirmed landmarks ready for promotion.
         confirmed_landmarks = manager.add_tentative_landmarks(
-            current_step=k + 1,
+            current_step=k,
             unassociated_measurements=unassociated_measurements,
             new_tentative_landmarks=np.asarray(tentative_landmarks, dtype=float).reshape(-1, 2),
         )
 
+        # Add new landmark factors for confirmed landmarks.
         for lm in confirmed_landmarks:
             new_lm_key = L(len(slam.landmark_keys))
             slam.landmark_keys.append(new_lm_key)
 
             slam.new_values.insert(new_lm_key, lm.position)
 
+            # Add all supporting observations retroactively as factors.
             for obs in lm.supporting_observations:
                 r, b = obs.measurement
                 slam.new_factors.add(
@@ -271,12 +306,14 @@ def run_slam(
                     )
                 )
 
+        # ======= Update iSAM2 With Measurement Factors and Values ========
         t0 = time.perf_counter()
         slam.update_and_clear()
         diagnostics.add_time("duration_optimization", time.perf_counter() - t0)
 
+        # ======= Logging ========
         diagnostics.duration_step = time.perf_counter() - t_step
-        diagnostics.scan_step = k + 1
+        diagnostics.scan_step = k
         diagnostics.scan_time = meas.scan_time
         diagnostics.num_landmarks = len(slam.landmark_keys)
         diagnostics.num_local_landmarks = len(local_landmarks_keys)
@@ -286,13 +323,13 @@ def run_slam(
 
         diagnostics_steps.append(diagnostics)
 
-        if logger.should_save_association_diagnostics(k + 1):
+        if logger.should_save_association_diagnostics(k):
             logger.save_association_diagnostics(
                 AssociationDiagnostics(
-                    scan_step=k + 1,
+                    scan_step=k,
                     scan_time=meas.scan_time,
-                    pose_index=k + 1,
-                    pose=pose2_to_array(T_kp1),
+                    pose_index=k,
+                    pose=pose2_to_array(T_pose),
                     measurements=measurements,
                     predicted_measurements=local_predicted_measurements,
                     association=association,
@@ -301,6 +338,10 @@ def run_slam(
                 )
             )
 
+        if logger.should_save_snapshot(k):
+            logger.save_snapshot(k, slam.get_snapshot())
+
+    # ======= Save Result to Output Directory ========
     total_time = time.perf_counter() - t_run_start
 
     if diagnostics_steps:

@@ -52,6 +52,18 @@ def draw_landmark_covariances(ax, landmarks: np.ndarray, landmarks_cov: np.ndarr
             confidence_ellipse_2d(lm, cov, fc="tomato", alpha=alpha, ec="tomato", **kwargs)
         )
 
+
+def pose2_tangent_errors(poses: np.ndarray, poses_gt: np.ndarray) -> np.ndarray:
+    """Return Logmap(T_est.between(T_gt)) for aligned Pose2 arrays."""
+    import gtsam
+
+    errors = np.zeros_like(poses, dtype=float)
+    for i, (pose, pose_gt) in enumerate(zip(poses, poses_gt)):
+        T = gtsam.Pose2(*pose)
+        T_gt = gtsam.Pose2(*pose_gt)
+        errors[i, :] = gtsam.Pose2.Logmap(T.between(T_gt))
+    return errors
+
 def plot_estimate(
     poses: np.ndarray | None = None,
     poses_cov: np.ndarray | None = None,
@@ -274,8 +286,10 @@ def plot_pose_diagnostics(
 
     This function plots x, y, and heading diagnostics over time.
 
-    If poses and poses_gt are provided, component errors are plotted:
-        x_error, y_error, yaw_error.
+    If poses and poses_gt are provided, component errors are plotted. For
+    cov_frame == "body", the error is the Pose2 tangent vector
+    Logmap(T_est.between(T_gt)); for cov_frame == "world", x/y are direct
+    world-frame component differences and yaw is wrapped.
 
     If poses_covs is provided, marginal 1, 2, and 3 sigma covariance envelopes
     are plotted.
@@ -379,11 +393,15 @@ def plot_pose_diagnostics(
     # Component errors
     # -------------------------------------------------------------------------
     if plot_error:
-        error = poses - poses_gt # could use more exact log(T_gt^{-1}*T)
+        if cov_frame == "body":
+            error = pose2_tangent_errors(poses, poses_gt)
+        else:
+            error = poses - poses_gt
+            error[:, 2] = ssa(error[:, 2])
         
         x_error = error[:, 0]
         y_error = error[:, 1]
-        yaw_error = ssa(error[:, 2])
+        yaw_error = error[:, 2]
 
         x_rmse = float(np.sqrt(np.mean(x_error**2)))
         y_rmse = float(np.sqrt(np.mean(y_error**2)))
@@ -462,17 +480,7 @@ def plot_pose_nees(
 
     poses_gt = poses_gt[:n]
 
-    # poses_error = poses - poses_gt
-    # poses_error[:, 2] = ssa(poses_error[:, 2])
-
-    poses_error = np.zeros_like(poses)
-    
-    import gtsam
-    for i, (pose, pose_gt) in enumerate(zip(poses, poses_gt)):
-        T = gtsam.Pose2(*pose)
-        T_gt = gtsam.Pose2(*pose_gt)
-        poses_error[i, :] = gtsam.Pose2.Logmap(T.between(T_gt))
-    # TODO test with lie also
+    poses_error = pose2_tangent_errors(poses, poses_gt)
 
     nees = np.einsum("ij,ijk,ik->i", poses_error, np.linalg.inv(poses_covs), poses_error)
     anees = np.sum(nees) / n 
@@ -506,8 +514,8 @@ def plot_position_nis(
     else:
         fig = ax.figure
 
-    poses = poses[1:]
-    poses_covs = poses_covs[1:]
+    poses = poses
+    poses_covs = poses_covs
  
     pose_xy = poses[:, :2]
     covs_xy = poses_covs[:, :2, :2]

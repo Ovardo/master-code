@@ -158,7 +158,7 @@ class SlamRunPlotter:
             poses = self.snapshots[-1].get("poses"),
             poses_covs = self.snapshots[-1].get("poses_covariance"),
             poses_gt = self.gt_poses,
-            cov_frame = 'world',
+            cov_frame = 'body',
         )
         return fig, axes
     

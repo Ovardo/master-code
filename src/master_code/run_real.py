@@ -28,7 +28,7 @@ def run_real(
 
 
 def main() -> None:
-    NUM_STEPS = 7300
+    NUM_STEPS = 2000
     OUTPUT_DIR = RUNS_ROOT / "real" / datetime.now().strftime("%Y%m%d_%H%M%S")
     CONFIG_NAME = "real.yaml"
 

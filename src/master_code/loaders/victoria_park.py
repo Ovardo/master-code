@@ -133,10 +133,15 @@ class VictoriaParkLoader:
             stop_lidar_idx = min(stop_lidar_idx, start_lidar_idx + max_steps)
 
         for lidar_idx in range(start_lidar_idx, stop_lidar_idx):
-            t0 = float(self.lsr_timestamps[lidar_idx - 1])
-            t1 = float(self.lsr_timestamps[lidar_idx])
-
-            odometry = self._odometry_between(t0, t1)
+            if scan_step == 0:
+                # Anchor the first scan at the prior pose X(0). The vehicle is
+                # stationary during the first seconds, so the wheel odometry
+                # accumulated before the first scan is dropped without loss.
+                odometry: list[WheelOdometry] = []
+            else:
+                t0 = float(self.lsr_timestamps[lidar_idx - 1])
+                t1 = float(self.lsr_timestamps[lidar_idx])
+                odometry = self._odometry_between(t0, t1)
 
             yield RawLidarStepInput(
                 odometry=odometry,
@@ -199,27 +204,31 @@ class VictoriaParkLoader:
     #         )
     #         scan_step += 1
 
-    # def iterate_slam(
-    #     self,
-    #     config: SlamConfig,
-    #     max_steps: int | None = None,
-    # ) -> Iterator[SlamStepInput]:
-    #     for meas in self.iterate(max_steps):
-    #         delta_odo = []
-    #         delta_odo_covs = []
+    def iterate_slam(
+        self,
+        config: SlamConfig,
+        max_steps: int | None = None,
+    ) -> Iterator[SlamStepInput]:
+        for meas in self.iterate(max_steps):
+            if not meas.odometry:
+                # First scan: no motion into the prior pose X(0).
+                delta_T, delta_cov = None, None
+            else:
+                delta_odo = []
+                delta_odo_covs = []
 
-    #         for odo in meas.odometry:
-    #             delta_odo.append(relative_pose(odo.velocity, odo.steering, odo.dt))
-    #             delta_odo_covs.append(config.noise.odom_cov_matrix * odo.dt)
+                for odo in meas.odometry:
+                    delta_odo.append(relative_pose(odo.velocity, odo.steering, odo.dt))
+                    delta_odo_covs.append(config.noise.odom_cov_matrix * odo.dt)
 
-    #         delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
+                delta_T, delta_cov = preintegrate(delta_odo, delta_odo_covs)
 
-    #         yield SlamStepInput(
-    #             relative_pose=delta_T,
-    #             relative_pose_cov=delta_cov,
-    #             measurements=extract_tree_measurements(meas.scan, config.sensor.range_local),
-    #             scan_time=float(meas.scan_time),
-    #         )
+            yield SlamStepInput(
+                relative_pose=delta_T,
+                relative_pose_cov=delta_cov,
+                measurements=extract_tree_measurements(meas.scan, config.sensor.range_local),
+                scan_time=float(meas.scan_time),
+            )
 
     @property
     def max_steps(self) -> int:

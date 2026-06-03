@@ -13,6 +13,7 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Ellipse, Patch
 from tqdm import tqdm
 
 from master_code.utils import rotmat2
@@ -27,7 +28,9 @@ ASSOCIATION_PATTERN = re.compile(r"assoc_(\d{5})\.npz$")
 class SnapshotFrame:
     step: int
     poses: np.ndarray
+    poses_covariance: np.ndarray | None
     landmarks: np.ndarray
+    landmarks_covariance: np.ndarray | None
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,98 @@ def _measurement_points_world(pose: np.ndarray, measurements: np.ndarray) -> np.
     bearings = measurements[:, 1]
     local_points = np.column_stack((ranges * np.cos(bearings), ranges * np.sin(bearings)))
     return pose[:2] + local_points @ rotmat2(pose[2]).T
+
+
+def _covariance_array(data: np.lib.npyio.NpzFile, key: str, shape_tail: tuple[int, int]) -> np.ndarray | None:
+    if key not in data.files:
+        return None
+
+    covariance = np.asarray(data[key], dtype=float)
+    if covariance.size == 0:
+        return np.empty((0, *shape_tail), dtype=float)
+    return covariance.reshape(-1, *shape_tail).copy()
+
+
+def _confidence_ellipse(
+    center: np.ndarray,
+    covariance: np.ndarray,
+    *,
+    facecolor: str,
+    edgecolor: str,
+    alpha: float,
+    zorder: int,
+) -> Ellipse | None:
+    if not np.all(np.isfinite(center)) or not np.all(np.isfinite(covariance)):
+        return None
+
+    try:
+        eigvals, eigvecs = np.linalg.eigh(covariance)
+    except np.linalg.LinAlgError:
+        return None
+
+    order = np.argsort(eigvals)[::-1]
+    eigvals = np.maximum(eigvals[order], 0.0)
+    eigvecs = eigvecs[:, order]
+
+    scale_95 = 2.447746830681
+    width, height = 2.0 * scale_95 * np.sqrt(eigvals)
+    angle = np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0]))
+    return Ellipse(
+        xy=tuple(center),
+        width=float(width),
+        height=float(height),
+        angle=float(angle),
+        facecolor=facecolor,
+        edgecolor=edgecolor,
+        alpha=alpha,
+        linewidth=0.7,
+        zorder=zorder,
+    )
+
+
+def _clear_patches(patches: list[Ellipse]) -> None:
+    for patch in patches:
+        patch.remove()
+    patches.clear()
+
+
+def _add_covariance_ellipses(
+    ax: plt.Axes,
+    centers: np.ndarray,
+    covariances: np.ndarray | None,
+    *,
+    facecolor: str,
+    edgecolor: str,
+    alpha: float,
+    zorder: int,
+) -> list[Ellipse]:
+    if covariances is None or len(centers) == 0:
+        return []
+
+    patches: list[Ellipse] = []
+    for center, covariance in zip(centers, covariances):
+        ellipse = _confidence_ellipse(
+            center,
+            covariance,
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            alpha=alpha,
+            zorder=zorder,
+        )
+        if ellipse is None:
+            continue
+        ax.add_patch(ellipse)
+        patches.append(ellipse)
+    return patches
+
+
+def _pose_xy_covariances_world(poses: np.ndarray, poses_covariance: np.ndarray | None) -> np.ndarray | None:
+    if poses_covariance is None or len(poses) == 0:
+        return None
+
+    rotations = rotmat2(poses[:, 2])
+    xy_covariances = poses_covariance[:, :2, :2]
+    return rotations @ xy_covariances @ rotations.transpose((0, 2, 1))
 
 
 def _discover_step_files(directory: Path, pattern: re.Pattern[str], label: str) -> dict[int, Path]:
@@ -129,7 +224,9 @@ def load_snapshot_frame(path: Path) -> SnapshotFrame:
         return SnapshotFrame(
             step=int(data["step"][0]),
             poses=np.asarray(data["poses"], dtype=float).copy(),
+            poses_covariance=_covariance_array(data, "poses_covariance", (3, 3)),
             landmarks=_as_xy(data["landmarks"]).copy(),
+            landmarks_covariance=_covariance_array(data, "landmarks_covariance", (2, 2)),
         )
 
 
@@ -145,7 +242,11 @@ def load_association_frame(path: Path) -> AssociationFrame:
         )
 
 
-def compute_axis_limits(run_dir: Path, fallback_snapshot: Path) -> tuple[tuple[float, float], tuple[float, float]]:
+def compute_axis_limits(
+    run_dir: Path,
+    fallback_snapshot: Path,
+    extra_points: tuple[np.ndarray, ...] = (),
+) -> tuple[tuple[float, float], tuple[float, float]]:
     final_snapshot = run_dir / "snapshots" / "snap_final.npz"
     snapshot_path = final_snapshot if final_snapshot.exists() else fallback_snapshot
 
@@ -153,7 +254,11 @@ def compute_axis_limits(run_dir: Path, fallback_snapshot: Path) -> tuple[tuple[f
         poses_xy = _as_xy(data["poses"][:, :2])
         landmarks = _as_xy(data["landmarks"])
 
-    point_sets = [points for points in (poses_xy, landmarks) if len(points) > 0]
+    point_sets = [
+        points
+        for points in (poses_xy, landmarks, *(_as_xy(points) for points in extra_points))
+        if len(points) > 0
+    ]
     if not point_sets:
         return (-1.0, 1.0), (-1.0, 1.0)
 
@@ -192,8 +297,15 @@ def render_video(
     stride: int = 1,
     fps: int = 20,
     dpi: int = 150,
+    reference_poses: np.ndarray | None = None,
+    reference_landmarks: np.ndarray | None = None,
+    title: str = "SLAM Trajectory and Data Associations",
+    show_covariances: bool = False,
+    pose_cov_stride: int = 10,
 ) -> None:
     steps, snapshot_paths, association_paths = discover_frame_steps(run_dir, start, stop, stride)
+    if pose_cov_stride <= 0:
+        raise ValueError(f"pose_cov_stride must be positive, got {pose_cov_stride}")
 
     if not animation.writers.is_available("ffmpeg"):
         available = ", ".join(animation.writers.list())
@@ -204,17 +316,56 @@ def render_video(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    xlim, ylim = compute_axis_limits(run_dir, snapshot_paths[steps[-1]])
+    reference_poses_xy = np.empty((0, 2), dtype=float)
+    if reference_poses is not None:
+        reference_poses = np.asarray(reference_poses, dtype=float)
+        if reference_poses.size > 0:
+            reference_poses_xy = _as_xy(reference_poses[:, :2])
+
+    reference_landmarks_xy = (
+        _as_xy(reference_landmarks)
+        if reference_landmarks is not None
+        else np.empty((0, 2), dtype=float)
+    )
+
+    xlim, ylim = compute_axis_limits(
+        run_dir,
+        snapshot_paths[steps[-1]],
+        extra_points=(reference_poses_xy, reference_landmarks_xy),
+    )
     heading_length = max(3.0, 0.015 * (xlim[1] - xlim[0]))
 
     fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
-    ax.set_title("SLAM Trajectory and Data Associations")
+    ax.set_title(title)
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, lw=0.4, alpha=0.7)
+
+    if len(reference_poses_xy) > 0:
+        ax.plot(
+            reference_poses_xy[:, 0],
+            reference_poses_xy[:, 1],
+            color="black",
+            linestyle="--",
+            lw=1.0,
+            alpha=0.75,
+            label="Ground truth trajectory",
+            zorder=1,
+        )
+    if len(reference_landmarks_xy) > 0:
+        ax.scatter(
+            reference_landmarks_xy[:, 0],
+            reference_landmarks_xy[:, 1],
+            s=18,
+            marker="x",
+            c="0.25",
+            alpha=0.65,
+            label="Ground truth landmarks",
+            zorder=1,
+        )
 
     trajectory_line, = ax.plot([], [], color="steelblue", lw=1.2, label="Estimated trajectory", zorder=3)
     heading_line, = ax.plot([], [], color="black", lw=1.2, zorder=7)
@@ -226,6 +377,8 @@ def render_video(
     associated_scatter = ax.scatter([], [], s=36, marker=".", c="steelblue", label="Associated measurements", zorder=6)
     association_lines = LineCollection([], colors="seagreen", linewidths=0.9, alpha=0.75, zorder=5)
     ax.add_collection(association_lines)
+    pose_covariance_patches: list[Ellipse] = []
+    landmark_covariance_patches: list[Ellipse] = []
     frame_text = ax.text(
         0.02,
         0.98,
@@ -237,11 +390,19 @@ def render_video(
         bbox={"facecolor": "white", "edgecolor": "0.8", "alpha": 0.86, "boxstyle": "round,pad=0.35"},
     )
 
-    ax.legend(loc="lower right", fontsize=8)
+    handles, labels = ax.get_legend_handles_labels()
+    if show_covariances:
+        covariance_handles = [
+            Patch(facecolor="steelblue", edgecolor="steelblue", alpha=0.18, label=f"Pose covariance ({pose_cov_stride} poses)"),
+            Patch(facecolor="tomato", edgecolor="tomato", alpha=0.16, label="Landmark covariance"),
+        ]
+        handles.extend(covariance_handles)
+        labels.extend(handle.get_label() for handle in covariance_handles)
+    ax.legend(handles=handles, labels=labels, loc="lower right", fontsize=8)
 
     writer = animation.FFMpegWriter(
         fps=fps,
-        metadata={"title": "SLAM trajectory associations", "artist": "master_code"},
+        metadata={"title": title, "artist": "master_code"},
         bitrate=2400,
     )
 
@@ -277,6 +438,33 @@ def render_video(
             associated_scatter.set_offsets(_scatter_offsets(associated_points))
             unassociated_scatter.set_offsets(_scatter_offsets(unassociated_points))
             association_lines.set_segments(segments)
+            _clear_patches(pose_covariance_patches)
+            _clear_patches(landmark_covariance_patches)
+            if show_covariances:
+                pose_indices = np.arange(0, len(poses), pose_cov_stride)
+                pose_covariances_world = _pose_xy_covariances_world(poses, snapshot.poses_covariance)
+                pose_covariance_patches.extend(
+                    _add_covariance_ellipses(
+                        ax,
+                        poses[pose_indices, :2],
+                        None if pose_covariances_world is None else pose_covariances_world[pose_indices],
+                        facecolor="steelblue",
+                        edgecolor="steelblue",
+                        alpha=0.18,
+                        zorder=2,
+                    )
+                )
+                landmark_covariance_patches.extend(
+                    _add_covariance_ellipses(
+                        ax,
+                        snapshot.landmarks,
+                        snapshot.landmarks_covariance,
+                        facecolor="tomato",
+                        edgecolor="tomato",
+                        alpha=0.16,
+                        zorder=2,
+                    )
+                )
 
             heading = heading_length * np.array([np.cos(current_pose[2]), np.sin(current_pose[2])])
             heading_line.set_data(
@@ -311,6 +499,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--stop", type=int, default=None, help="Exclusive stop step. Defaults to the last available step + 1.")
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--show-covariances", action="store_true")
+    parser.add_argument("--pose-cov-stride", type=int, default=10)
     return parser.parse_args()
 
 
@@ -329,6 +519,8 @@ def main() -> None:
         stride=args.stride,
         fps=args.fps,
         dpi=args.dpi,
+        show_covariances=args.show_covariances,
+        pose_cov_stride=args.pose_cov_stride,
     )
     print(f"Saved video to {output}")
 

@@ -163,19 +163,19 @@ class SlamRunPlotter:
         return fig, axes
     
     
-    def plot_pose_nees(self, axes = None) -> tuple[plt.Figure, plt.Axes] | None:
+    def plot_pose_nees(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
         if self.gt_poses is None:
             print("No ground truth poses found, skipping NEES plot.")
             return None
         
-        fig, axes = plot_pose_nees(
-            axes = axes,
+        fig, ax = plot_pose_nees(
+            ax = ax,
             poses = self.snapshots[-1].get("poses"),
             poses_covs = self.snapshots[-1].get("poses_covariance"),
             poses_gt = self.gt_poses,
         )
-        return fig, axes
-
+        return fig, ax
+    
 
     def plot_position_nis(self, ax = None) -> tuple[plt.Figure, plt.Axes] | None:
         if self.gnss is None:

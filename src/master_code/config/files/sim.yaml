@@ -3,7 +3,7 @@ noise:
   sigma_steer_deg: 0.5
   sigma_odom_x: 0.01
   sigma_odom_y: 0.01
-  sigma_odom_yaw_deg: 0.5  #1.0
+  sigma_odom_yaw_deg: 1.0  #1.0
   sigma_range: 0.2
   sigma_bearing_deg: 1.0
   sigma_init_pose_x: 0.1 

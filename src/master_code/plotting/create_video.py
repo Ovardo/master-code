@@ -39,8 +39,10 @@ class AssociationFrame:
     scan_time: float
     pose: np.ndarray
     measurements: np.ndarray
+    predicted_measurements: np.ndarray
     association: np.ndarray
     local_landmarks: np.ndarray
+    innovation_covariance: np.ndarray
 
 
 def _as_xy(array: np.ndarray) -> np.ndarray:
@@ -232,13 +234,25 @@ def load_snapshot_frame(path: Path) -> SnapshotFrame:
 
 def load_association_frame(path: Path) -> AssociationFrame:
     with np.load(path, allow_pickle=False) as data:
+        if "predicted_measurements" in data.files:
+            predicted_measurements = _as_xy(data["predicted_measurements"]).copy()
+        else:
+            predicted_measurements = np.empty((0, 2), dtype=float)
+
+        if "innovation_covariance" in data.files:
+            innovation_covariance = np.asarray(data["innovation_covariance"], dtype=float).copy()
+        else:
+            innovation_covariance = np.empty((0, 0), dtype=float)
+
         return AssociationFrame(
             scan_step=int(data["scan_step"][0]),
             scan_time=float(data["scan_time"][0]),
             pose=np.asarray(data["pose"], dtype=float).reshape(3).copy(),
             measurements=_as_xy(data["measurements"]).copy(),
+            predicted_measurements=predicted_measurements,
             association=np.asarray(data["association"], dtype=int).reshape(-1).copy(),
             local_landmarks=_as_xy(data["local_landmarks"]).copy(),
+            innovation_covariance=innovation_covariance,
         )
 
 
@@ -289,6 +303,75 @@ def _association_segments(measurement_world: np.ndarray, association: np.ndarray
     return segments
 
 
+def _marginal_innovation_covariances(innovation_covariance: np.ndarray, num_predicted: int) -> np.ndarray:
+    """Extract the per-prediction 2x2 marginal blocks from the (2L, 2L) innovation covariance."""
+    if num_predicted == 0:
+        return np.empty((0, 2, 2), dtype=float)
+
+    covariance = np.asarray(innovation_covariance, dtype=float)
+    if covariance.shape != (2 * num_predicted, 2 * num_predicted):
+        return np.empty((0, 2, 2), dtype=float)
+
+    blocks = covariance.reshape(num_predicted, 2, num_predicted, 2)
+    indices = np.arange(num_predicted)
+    return blocks[indices, :, indices, :].copy()
+
+
+def _innovation_segments(measurements: np.ndarray, predicted: np.ndarray, association: np.ndarray) -> list[np.ndarray]:
+    """Connect each associated measurement to its predicted measurement in (range, bearing) space."""
+    segments: list[np.ndarray] = []
+    for measurement, predicted_index in zip(measurements, association):
+        if predicted_index < 0 or predicted_index >= len(predicted):
+            continue
+        segments.append(np.vstack((measurement, predicted[predicted_index])))
+    return segments
+
+
+def compute_innovation_limits(
+    association_paths: dict[int, Path],
+    steps: list[int],
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Fixed (range, bearing) axis limits spanning every measurement, prediction and gate ellipse."""
+    scale_95 = 2.447746830681
+    range_values: list[np.ndarray] = []
+    bearing_values: list[np.ndarray] = []
+
+    for step in steps:
+        frame = load_association_frame(association_paths[step])
+        measurements = frame.measurements
+        predicted = frame.predicted_measurements
+        if len(measurements) > 0:
+            range_values.append(measurements[:, 0])
+            bearing_values.append(measurements[:, 1])
+        if len(predicted) > 0:
+            covariances = _marginal_innovation_covariances(frame.innovation_covariance, len(predicted))
+            half_range = np.zeros(len(predicted), dtype=float)
+            half_bearing = np.zeros(len(predicted), dtype=float)
+            if len(covariances) == len(predicted):
+                half_range = scale_95 * np.sqrt(np.maximum(covariances[:, 0, 0], 0.0))
+                half_bearing = scale_95 * np.sqrt(np.maximum(covariances[:, 1, 1], 0.0))
+            range_values.append(predicted[:, 0] - half_range)
+            range_values.append(predicted[:, 0] + half_range)
+            bearing_values.append(predicted[:, 1] - half_bearing)
+            bearing_values.append(predicted[:, 1] + half_bearing)
+
+    if not range_values or not bearing_values:
+        return (0.0, 1.0), (-np.pi, np.pi)
+
+    ranges = np.concatenate(range_values)
+    bearings = np.concatenate(bearing_values)
+    ranges = ranges[np.isfinite(ranges)]
+    bearings = bearings[np.isfinite(bearings)]
+    if len(ranges) == 0 or len(bearings) == 0:
+        return (0.0, 1.0), (-np.pi, np.pi)
+
+    range_pad = max(0.05 * (ranges.max() - ranges.min()), 0.5)
+    bearing_pad = max(0.05 * (bearings.max() - bearings.min()), 0.05)
+    range_lim = (float(ranges.min() - range_pad), float(ranges.max() + range_pad))
+    bearing_lim = (float(bearings.min() - bearing_pad), float(bearings.max() + bearing_pad))
+    return range_lim, bearing_lim
+
+
 def render_video(
     run_dir: Path,
     output_path: Path,
@@ -302,6 +385,7 @@ def render_video(
     title: str = "SLAM Trajectory and Data Associations",
     show_covariances: bool = False,
     pose_cov_stride: int = 10,
+    show_innovation: bool = False,
 ) -> None:
     steps, snapshot_paths, association_paths = discover_frame_steps(run_dir, start, stop, stride)
     if pose_cov_stride <= 0:
@@ -335,7 +419,17 @@ def render_video(
     )
     heading_length = max(3.0, 0.015 * (xlim[1] - xlim[0]))
 
-    fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
+    if show_innovation:
+        fig, (ax, ax_innov) = plt.subplots(
+            1,
+            2,
+            figsize=(15, 8),
+            constrained_layout=True,
+            gridspec_kw={"width_ratios": [1.25, 1.0]},
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
+        ax_innov = None
     ax.set_title(title)
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
@@ -399,6 +493,32 @@ def render_video(
         handles.extend(covariance_handles)
         labels.extend(handle.get_label() for handle in covariance_handles)
     ax.legend(handles=handles, labels=labels, loc="lower right", fontsize=8)
+
+    innovation_predicted_scatter = None
+    innovation_associated_scatter = None
+    innovation_unassociated_scatter = None
+    innovation_lines = None
+    innovation_gate_patches: list[Ellipse] = []
+    if ax_innov is not None:
+        range_lim, bearing_lim = compute_innovation_limits(association_paths, steps)
+        ax_innov.set_title("Measurement innovation space")
+        ax_innov.set_xlabel("range [m]")
+        ax_innov.set_ylabel("bearing [rad]")
+        ax_innov.set_xlim(*range_lim)
+        ax_innov.set_ylim(*bearing_lim)
+        ax_innov.grid(True, lw=0.4, alpha=0.7)
+
+        innovation_predicted_scatter = ax_innov.scatter([], [], s=40, marker="x", c="orange", label="Predicted measurements", zorder=4)
+        innovation_associated_scatter = ax_innov.scatter([], [], s=30, marker=".", c="steelblue", label="Associated measurements", zorder=6)
+        innovation_unassociated_scatter = ax_innov.scatter([], [], s=28, marker=".", c="dimgray", label="Unassociated measurements", zorder=5)
+        innovation_lines = LineCollection([], colors="seagreen", linewidths=0.9, alpha=0.75, zorder=3)
+        ax_innov.add_collection(innovation_lines)
+
+        innovation_handles, innovation_labels = ax_innov.get_legend_handles_labels()
+        gate_handle = Patch(facecolor="none", edgecolor="orange", label="Marginal innovation gate (95%)")
+        innovation_handles.append(gate_handle)
+        innovation_labels.append(gate_handle.get_label())
+        ax_innov.legend(handles=innovation_handles, labels=innovation_labels, loc="lower right", fontsize=8)
 
     writer = animation.FFMpegWriter(
         fps=fps,
@@ -466,6 +586,30 @@ def render_video(
                     )
                 )
 
+            if ax_innov is not None:
+                predicted_measurements = association.predicted_measurements
+                _clear_patches(innovation_gate_patches)
+                innovation_predicted_scatter.set_offsets(_scatter_offsets(predicted_measurements))
+                innovation_associated_scatter.set_offsets(_scatter_offsets(association.measurements[is_associated]))
+                innovation_unassociated_scatter.set_offsets(_scatter_offsets(association.measurements[~is_associated]))
+                innovation_lines.set_segments(
+                    _innovation_segments(association.measurements, predicted_measurements, association.association)
+                )
+                marginal_covariances = _marginal_innovation_covariances(
+                    association.innovation_covariance, len(predicted_measurements)
+                )
+                innovation_gate_patches.extend(
+                    _add_covariance_ellipses(
+                        ax_innov,
+                        predicted_measurements,
+                        marginal_covariances if len(marginal_covariances) == len(predicted_measurements) else None,
+                        facecolor="none",
+                        edgecolor="orange",
+                        alpha=0.8,
+                        zorder=3,
+                    )
+                )
+
             heading = heading_length * np.array([np.cos(current_pose[2]), np.sin(current_pose[2])])
             heading_line.set_data(
                 [current_pose[0], current_pose[0] + heading[0]],
@@ -501,6 +645,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--show-covariances", action="store_true")
     parser.add_argument("--pose-cov-stride", type=int, default=10)
+    parser.add_argument(
+        "--show-innovation",
+        action="store_true",
+        help="Add a side panel plotting measurements and predicted measurements in innovation space with marginal gates.",
+    )
     return parser.parse_args()
 
 
@@ -521,6 +670,7 @@ def main() -> None:
         dpi=args.dpi,
         show_covariances=args.show_covariances,
         pose_cov_stride=args.pose_cov_stride,
+        show_innovation=args.show_innovation,
     )
     print(f"Saved video to {output}")
 

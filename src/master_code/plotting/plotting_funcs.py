@@ -470,12 +470,12 @@ def plot_pose_nees(
     poses: np.ndarray,
     poses_gt: np.ndarray,
     poses_covs: np.ndarray,
-    axes: plt.Axes | None = None,
+    ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot NEES over time for pose estimates."""
 
-    fig, ax = _ensure_ax(axes, figsize=(8, 3))
-    
+    fig, ax = _ensure_ax(ax, figsize=(8, 3))
+
     n = len(poses)
 
     poses_gt = poses_gt[:n]
@@ -483,22 +483,23 @@ def plot_pose_nees(
     poses_error = pose2_tangent_errors(poses, poses_gt)
 
     nees = np.einsum("ij,ijk,ik->i", poses_error, np.linalg.inv(poses_covs), poses_error)
-    anees = np.sum(nees) / n 
-    
+    anees = np.sum(nees) / n
+
+    upper_bound = chi2.ppf(0.95, 3) 
+    lower_bound = chi2.ppf(0.05, 3)
+    inlier_mask = (nees >= lower_bound) & (nees <= upper_bound)
+    inlier_pct = 100.0 * np.mean(inlier_mask) 
+
     ax.plot(nees, color="steelblue", label=f"NEES (ANEES={anees:.2f})")
-    ax.axhline(chi2.isf(1-0.95, 3), ls="--", c="tomato", label=r"$\chi^2_{3,0.95}$")
-    ax.axhline(chi2.isf(1-0.05, 3), ls="--", c="orange", label=r"$\chi^2_{3,0.05}$")
+    ax.axhline(lower_bound, ls="--", c="tomato", label=r"$\chi^2_{3,0.95}$")
+    ax.axhline(upper_bound, ls="--", c="orange", label=r"$\chi^2_{3,0.05}$")
     ax.set_xlabel("Scan step")
     ax.set_ylabel("NEES")
-    ax.set_title("Pose NEES")
+    ax.set_title(f"Pose NEES (Inliers: {inlier_pct:.1f}%)")
     ax.grid(True, lw=0.4)
     ax.legend(loc="upper center", ncol=3, frameon=True)
 
     return fig, ax
-
-
-def plot_landmark_nees():
-    pass #TODO
 
 
 def plot_position_nis(

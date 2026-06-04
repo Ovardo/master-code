@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--no-covariances", action="store_true")
     parser.add_argument("--pose-cov-stride", type=int, default=10)
+    parser.add_argument(
+        "--show-innovation",
+        action="store_true",
+        help="Add a side panel plotting measurements and predicted measurements in innovation space with marginal gates.",
+    )
     return parser.parse_args()
 
 
@@ -64,6 +69,7 @@ def main() -> None:
         title="Simulated SLAM Trajectory and Data Associations",
         show_covariances=not args.no_covariances,
         pose_cov_stride=args.pose_cov_stride,
+        show_innovation=args.show_innovation,
     )
     print(f"Saved video to {output}")
 

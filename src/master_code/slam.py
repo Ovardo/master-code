@@ -233,10 +233,11 @@ def run_slam(
         # Recover joint marginal covariance from the Bayes tree.
         t0 = time.perf_counter()
         cov_query = [pose_key] + local_landmarks_keys
-        support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
         P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
         diagnostics.duration_covariance_extraction = time.perf_counter() - t0
+        support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
+
 
         # Innovation covariance for local predicted measurements.
         S = H @ P @ H.T + R
@@ -344,6 +345,7 @@ def run_slam(
     # ======= Save Result to Output Directory ========
     total_time = time.perf_counter() - t_run_start
 
+    
     if diagnostics_steps:
         final_step = diagnostics_steps[-1].scan_step
         final_diagnostics = diagnostics_steps[-1]
@@ -351,9 +353,18 @@ def run_slam(
         final_step = 0
         final_diagnostics = StepDiagnostics(scan_step=0, num_landmarks=len(slam.landmark_keys))
 
+    # ======= Analysis ========
+    # from master_code.analysis import compute_algebraic_connectivity
+    # algebraic_connectivity = compute_algebraic_connectivity(slam.isam2, slam.isam2.calculateEstimate())
+
     logger.save_snapshot(final_step, slam.get_snapshot(), final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
-    logger.save_metadata(final_diagnostics, total_time, dataset=dataset.name)
+    logger.save_metadata(
+        final_diagnostics,
+        total_time,
+        dataset=dataset.name,
+        # algebraic_connectivity=algebraic_connectivity,
+    )
 
     if save_plots or show_plots:
         from master_code.plotter import SlamRunPlotter

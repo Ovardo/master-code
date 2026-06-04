@@ -172,9 +172,10 @@ class SlamLogger:
         diagnostics: StepDiagnostics,
         total_time: float,
         dataset: str,
+        algebraic_connectivity: float | None = None,
         verbose: bool = True,
     ) -> None:
-    
+
         metadata = {
             "timestamp":     datetime.now().isoformat(timespec="seconds"),
             "dataset":       dataset,
@@ -182,23 +183,25 @@ class SlamLogger:
             "num_landmarks": diagnostics.num_landmarks,
             "run_time_s":    total_time,
         }
-        
+
+        if algebraic_connectivity is not None:
+            metadata["algebraic_connectivity"] = algebraic_connectivity
+
         metadata_path = self.run_dir / "metadata.json"
         metadata_path.write_text(json.dumps(metadata, indent=2))
 
         if verbose:
-            print(
-                "\n".join(
-                    [
-                        "[SlamLogger] Run saved",
-                        f"  Path        : {self.run_dir.resolve()}",
-                        f"  Dataset     : {metadata['dataset']}",
-                        f"  Poses       : {metadata['num_poses']}",
-                        f"  Landmarks   : {metadata['num_landmarks']}",
-                        f"  Run time    : {metadata['run_time_s']:.2f}s",
-                    ]
-                )
-            )
+            lines = [
+                "[SlamLogger] Run saved",
+                f"  Path        : {self.run_dir.resolve()}",
+                f"  Dataset     : {metadata['dataset']}",
+                f"  Poses       : {metadata['num_poses']}",
+                f"  Landmarks   : {metadata['num_landmarks']}",
+                f"  Run time    : {metadata['run_time_s']:.2f}s",
+            ]
+            if algebraic_connectivity is not None:
+                lines.append(f"  Connectivity: {algebraic_connectivity:.4f}")
+            print("\n".join(lines))
 
     # ------------------------------------------------------------------
     # Loading

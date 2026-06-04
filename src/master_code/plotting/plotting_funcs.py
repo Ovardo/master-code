@@ -3,7 +3,7 @@ from typing import Literal
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Ellipse
-from scipy.stats import chi2
+from scipy.stats import chi2, spearmanr
 
 from master_code.data_association import NIS, individualCompatibility
 from master_code.plotting.thesis_style import thesis_figsize
@@ -242,19 +242,32 @@ def plot_landmarks_and_timing(
 
 def plot_timing_vs_landmarks(
     n_local: np.ndarray,
+    n_support: np.ndarray,
     t_cov: np.ndarray,
     ax: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot covariance recovery step time against in-view landmark count."""
-    fig, ax = _ensure_ax(ax, figsize=(8, 3))
+    fig, axes = _ensure_ax(ax, figsize=(8, 4), nrows=1, ncols=2)
 
-    ax.scatter(n_local, t_cov, alpha=0.4, s=12, color="steelblue")
-    ax.set_xlabel("# In-view landmarks")
-    ax.set_ylabel("Cov recovery time (s)")
-    ax.set_title("Covariance Recovery Time vs. In-view Landmarks")
-    ax.grid(True, lw=0.4)
+    t_cov_ms = 1000.0 * t_cov
+    t_support_ms = 1000.0 * t_cov
+    
+    rho_support, _ = spearmanr(n_support, t_support_ms)
+    rho_local, _ = spearmanr(n_local, t_cov_ms)
 
-    return fig, ax 
+    axes[0].scatter(n_local, t_cov_ms, alpha=0.4, s=12, color="steelblue")
+    axes[0].set_xlabel("# In-view landmarks")
+    axes[0].set_ylabel("Cov recovery time (ms)")
+    axes[0].set_title("Spearman rho: " + r"$\rho$" + f" = {rho_local:.2f}")
+    axes[0].grid(True, lw=0.4)
+
+    axes[1].scatter(n_support, t_support_ms, alpha=0.4, s=12, color="steelblue")
+    axes[1].set_xlabel("# Support cliques")
+    axes[1].set_ylabel("Cov recovery time (ms)")
+    axes[1].set_title("Spearman rho: " + r"$\rho$" + f" = {rho_support:.2f}")
+    axes[1].grid(True, lw=0.4)
+
+    return fig, axes
 
 
 def plot_landmark_growth(
@@ -536,13 +549,18 @@ def plot_position_nis(
     innovation_xy = pose_xy - gnss[:, 1:3]
     nis_xy = np.einsum("ij,ijk,ik->i", innovation_xy, np.linalg.inv(innovation_covs_xy), innovation_xy)
     anis_xy = np.sum(nis_xy) / len(nis_xy)
-   
+
+    nis_lower = chi2.isf(1-0.05, 2)
+    nis_upper = chi2.isf(1-0.95, 2)
+    inliers = np.count_nonzero((nis_xy >= nis_lower) & (nis_xy <= nis_upper))
+    inlier_frac = inliers / len(nis_xy)
+
     ax.scatter(nearest_pose_indices, nis_xy, s=5, color="steelblue", label=r"$\mathrm{NIS}_{xy}$")
-    ax.axhline(chi2.isf(1-0.95, 2), ls="--", c="tomato", lw=1, label=r"$\chi^2_{2,0.95}$")
-    ax.axhline(chi2.isf(1-0.05, 2), ls="--", c="orange", lw=1, label=r"$\chi^2_{2,0.05}$")
+    ax.axhline(nis_upper, ls="--", c="tomato", lw=1, label=r"$\chi^2_{2,0.95}$")
+    ax.axhline(nis_lower, ls="--", c="orange", lw=1, label=r"$\chi^2_{2,0.05}$")
     ax.set_xlabel("Scan step")
     ax.set_ylabel(r"NIS")
-    ax.set_title(f"NIS-position | ANIS = {anis_xy:.2f}")
+    ax.set_title(f"NIS-position | ANIS = {anis_xy:.2f} | inliers = {inlier_frac:.0%}")
     ax.grid(True, lw=0.4)
     ax.legend()
 

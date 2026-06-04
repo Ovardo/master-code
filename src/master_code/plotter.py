@@ -137,9 +137,10 @@ class SlamRunPlotter:
 
     def plot_timing_vs_landmarks(self, ax = None) -> tuple[plt.Figure, plt.Axes]:
         fig, ax = plot_timing_vs_landmarks(
-            ax      = ax,
-            n_local = self.steps.get("num_local_landmarks"),
-            t_cov   = self.steps.get("duration_covariance_extraction"),
+            ax        = ax,
+            n_local   = self.steps.get("num_local_landmarks"),
+            n_support = self.steps.get("num_support_cliques"),
+            t_cov     = self.steps.get("duration_covariance_extraction"),
         )
         return fig, ax
 
@@ -158,7 +159,7 @@ class SlamRunPlotter:
             poses = self.snapshots[-1].get("poses"),
             poses_covs = self.snapshots[-1].get("poses_covariance"),
             poses_gt = self.gt_poses,
-            cov_frame = 'body',
+            cov_frame = 'world',
         )
         return fig, axes
     

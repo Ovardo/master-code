@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,11 +17,13 @@ class RunSpec:
     color: str
 
 
+RUN = Path("runs/experiments/M_vs_N/20260604_204527")
+
 RUNS = [
-    RunSpec("M=1", "runs/M1_N4", "steelblue"),
-    RunSpec("M=2", "runs/M2_N4", "lightcoral"),
-    RunSpec("M=3", "runs/M3_N4", "green"),
-    RunSpec("M=4", "runs/M4_N4", "orange"),
+    RunSpec("M=1", RUN / 'M1_N4', "steelblue"),
+    RunSpec("M=2", RUN / 'M2_N4', "lightcoral"),
+    RunSpec("M=3", RUN / 'M3_N4', "green"),
+    RunSpec("M=4", RUN / 'M4_N4', "orange"),
 ]
 
 TIMING_COMPONENTS = [
@@ -42,7 +45,7 @@ def get_step_array(run: SlamRunPlotter, key: str, default: float = 0.0) -> np.nd
 
 def get_total_runtime(run: SlamRunPlotter) -> np.ndarray:
     """Return total per-step runtime in seconds."""
-    total = run.steps.get("duration_update")
+    total = run.steps.get("duration_step")
     if total is not None:
         return np.nan_to_num(np.asarray(total, dtype=float), nan=0.0)
 
@@ -234,7 +237,7 @@ def main(show: bool = True) -> None:
     runs[1][1].plot_final_snapshot(axes[1], title="M=2", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
     runs[2][1].plot_final_snapshot(axes[2], title="M=3", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
     runs[3][1].plot_final_snapshot(axes[3], title="M=4", show_legend=False, equal_aspect=False, show_grid=False, x_label=None, y_label=None)
-    for ax in axes:
+    for ax in axes.flat:
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_xticks([], minor=True)
@@ -242,21 +245,13 @@ def main(show: bool = True) -> None:
     fig.subplots_adjust(left=0, right=1, wspace=0)
     save_figure(fig, "compare_mn_estimate", bbox_inches="tight", pad_inches=0)
 
-    fig, ax = plt.subplots(figsize=(8, 3))
-    for spec, run in runs:
-        run.plot_error_over_time(ax, label=spec.label, color=spec.color)
-    ax.legend(title="N=4")
-    save_figure(fig, "compare_mn_ange")
-
-
-    fig, axes = plt.subplots(3, 1, figsize=(8, 6), tight_layout=True)
-    plot_growth(axes[0], runs)
-    plot_runtime_vs_landmarks(axes[1], runs)
-    plot_total_breakdown(axes[2], runs)
-    save_figure(fig, "compare_mn_runtime")
-
-    fig_components, _ = plot_component_scaling(runs)
-    save_figure(fig_components, "compare_mn_runtime_components")
+    fig, ax = plt.subplots(1, 1, figsize=(8, 2), tight_layout=True)
+    plot_growth(ax, runs)
+    save_figure(fig, "compare_mn_growth")
+    
+    fig, ax = plt.subplots(1, 1, figsize=(8, 3), tight_layout=True)
+    plot_total_breakdown(ax, runs)
+    save_figure(fig, "compare_mn_components")
 
     print_runtime_summary(runs)
     if show:

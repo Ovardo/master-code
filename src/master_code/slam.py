@@ -83,6 +83,24 @@ class SlamState:
         }
 
 
+def _save_final_joint_covariance(
+    output_dir: Path,
+    covariance: np.ndarray,
+    keys: list[int],
+) -> None:
+    """TEMP: persist the recovered joint marginal covariance of the final step.
+
+    Saved to compare against the old covariance method. The block ordering of
+    `covariance` is [pose(3), lm_0(2), lm_1(2), ...] matching `keys`. The keys are
+    stored as raw GTSAM symbols (int64). Remove once the comparison is done.
+    """
+    np.savez(
+        output_dir / "final_joint_covariance.npz",
+        covariance=covariance,
+        keys=np.asarray(keys, dtype=np.int64),
+    )
+
+
 def run_slam(
     config: SlamConfig,
     dataset: SlamDataset,
@@ -131,6 +149,10 @@ def run_slam(
 
     # Logging.
     diagnostics_steps = []
+
+    # TEMP: holds the final step's recovered joint covariance and its key ordering.
+    final_joint_covariance: np.ndarray | None = None
+    final_joint_covariance_keys: list[int] | None = None
 
     # ======= Add Prior Factor ========
     prior_mean = gtsam.Pose2(*dataset.initial_pose)
@@ -239,6 +261,11 @@ def run_slam(
         P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
         diagnostics.duration_covariance_extraction = time.perf_counter() - t0
+
+        # TEMP: keep the latest recovered joint covariance; after the loop this
+        # holds the final step's value (ordering [pose, lm_0, lm_1, ...]).
+        final_joint_covariance = P
+        final_joint_covariance_keys = cov_query
         support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
 
 
@@ -362,6 +389,15 @@ def run_slam(
 
     logger.save_snapshot(final_step, slam.get_snapshot(), final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
+
+    # TEMP: save the recovered joint covariance of the final step for comparison
+    # against the old covariance method. Remove when no longer needed.
+    if final_joint_covariance is not None and final_joint_covariance_keys is not None:
+        _save_final_joint_covariance(
+            output_dir,
+            final_joint_covariance,
+            final_joint_covariance_keys,
+        )
     logger.save_metadata(
         final_diagnostics,
         total_time,

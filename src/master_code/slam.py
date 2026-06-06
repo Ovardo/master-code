@@ -18,8 +18,10 @@ from master_code.logger import AssociationDiagnostics, SlamLogger, StepDiagnosti
 from master_code.utils import pose2_to_array, reorder_covariance_naive
 
 
+
 @dataclass(slots=True)
 class SlamStepInput:
+    """Data class representing a unified input for one SLAM step, regardless of the data source."""
     relative_pose: gtsam.Pose2 | None
     relative_pose_cov: np.ndarray | None
     measurements: np.ndarray
@@ -27,6 +29,7 @@ class SlamStepInput:
 
 
 class SlamDataset(Protocol):
+    """Protocol representing a SLAM dataset that can be iterated step-by-step with unified SLAM inputs."""
     name: str
 
     @property

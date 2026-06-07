@@ -36,6 +36,8 @@ class AssociationDiagnostics:
     predicted_measurements: np.ndarray
     association: np.ndarray
     local_landmarks: np.ndarray
+    local_landmark_keys: np.ndarray
+    prior_joint_covariance: np.ndarray
     innovation_covariance: np.ndarray
 
     def as_npz_dict(self) -> dict[str, np.ndarray]:
@@ -48,6 +50,8 @@ class AssociationDiagnostics:
             "predicted_measurements": np.asarray(self.predicted_measurements, dtype=float).reshape(-1, 2),
             "association": np.asarray(self.association, dtype=np.int64).reshape(-1),
             "local_landmarks": np.asarray(self.local_landmarks, dtype=float).reshape(-1, 2),
+            "local_landmark_keys": np.asarray(self.local_landmark_keys, dtype=np.int64).reshape(-1),
+            "prior_joint_covariance": np.asarray(self.prior_joint_covariance, dtype=float),
             "innovation_covariance": np.asarray(self.innovation_covariance, dtype=float),
         }
 
@@ -227,12 +231,61 @@ class SlamLogger:
         return json.loads(path.read_text())
 
     @staticmethod
-    def load_snapshot(snapshot_path: Path | str) -> dict[str, np.ndarray]:
-        return SlamLogger._load_npz_dict(snapshot_path)
+    def _resolve_step_path(
+        run_path: Path | str,
+        step: int,
+        directory: str,
+        prefix: str,
+        description: str,
+    ) -> Path:
+        if isinstance(step, bool) or not isinstance(step, int):
+            raise TypeError(f"step must be an int, got {type(step).__name__}")
+        if step < 0:
+            raise ValueError(f"step must be non-negative, got {step}")
+
+        step_dir = Path(run_path) / directory
+        path = step_dir / f"{prefix}_{step:05d}.npz"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"No {description} saved for step {step} in {step_dir}"
+            )
+        return path
 
     @staticmethod
-    def load_association_diagnostics(diagnostics_path: Path | str) -> dict[str, np.ndarray]:
-        return SlamLogger._load_npz_dict(diagnostics_path)
+    def load_snapshot(
+        run_path: Path | str,
+        step: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Load a snapshot by run directory and step, or directly by file path."""
+        if step is None:
+            return SlamLogger._load_npz_dict(run_path)
+
+        path = SlamLogger._resolve_step_path(
+            run_path,
+            step,
+            directory="snapshots",
+            prefix="snap",
+            description="snapshot",
+        )
+        return SlamLogger._load_npz_dict(path)
+
+    @staticmethod
+    def load_association_diagnostics(
+        run_path: Path | str,
+        step: int | None = None,
+    ) -> dict[str, np.ndarray]:
+        """Load association diagnostics by run directory and step, or directly by file path."""
+        if step is None:
+            return SlamLogger._load_npz_dict(run_path)
+
+        path = SlamLogger._resolve_step_path(
+            run_path,
+            step,
+            directory="associations",
+            prefix="assoc",
+            description="association diagnostics",
+        )
+        return SlamLogger._load_npz_dict(path)
 
     @staticmethod
     def load_reference(run_path: Path | str) -> dict[str, np.ndarray]:

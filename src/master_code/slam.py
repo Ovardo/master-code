@@ -259,13 +259,11 @@ def run_slam(
         t0 = time.perf_counter()
         cov_query = [pose_key] + local_landmarks_keys
         P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
+        # marginals = gtsam.Marginals(slam.isam2.getFactorsUnsafe(), slam.isam2.calculateEstimate())
+        # P = marginals.jointMarginalCovariance(cov_query).fullMatrix()
         P = reorder_covariance_naive(P)
-        diagnostics.duration_covariance_extraction = time.perf_counter() - t0
 
-        # TEMP: keep the latest recovered joint covariance; after the loop this
-        # holds the final step's value (ordering [pose, lm_0, lm_1, ...]).
-        final_joint_covariance = P
-        final_joint_covariance_keys = cov_query
+        diagnostics.duration_covariance_extraction = time.perf_counter() - t0
         support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
 
 
@@ -365,6 +363,8 @@ def run_slam(
                     predicted_measurements=local_predicted_measurements,
                     association=association,
                     local_landmarks=local_landmarks,
+                    local_landmark_keys=local_landmarks_keys,
+                    prior_joint_covariance=P,
                     innovation_covariance=S,
                 )
             )
@@ -390,19 +390,10 @@ def run_slam(
     logger.save_snapshot(final_step, slam.get_snapshot(), final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
 
-    # TEMP: save the recovered joint covariance of the final step for comparison
-    # against the old covariance method. Remove when no longer needed.
-    if final_joint_covariance is not None and final_joint_covariance_keys is not None:
-        _save_final_joint_covariance(
-            output_dir,
-            final_joint_covariance,
-            final_joint_covariance_keys,
-        )
     logger.save_metadata(
         final_diagnostics,
         total_time,
         dataset=dataset.name,
-        # algebraic_connectivity=algebraic_connectivity,
     )
 
     if save_plots or show_plots:

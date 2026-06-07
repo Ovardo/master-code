@@ -10,6 +10,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     "pip>=26.1.1",
     "scipy>=1.17.1",
+    "shapely>=2.1.2",
     "tqdm>=4.67.3",
 ]
 

@@ -1,6 +1,0 @@
-{
-  "python.envFile": "${workspaceFolder}/.env",
-  "python.analysis.extraPaths": ["${workspaceFolder}/src"],
-  "python.terminal.executeInFileDir": false,
-  "terminal.integrated.cwd": "${workspaceFolder}"
-}

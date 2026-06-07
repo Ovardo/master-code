@@ -257,6 +257,7 @@ class GraphSLAM:
                     association=association,
                     local_landmarks=local_lm,
                     local_landmark_keys=local_lm_keys,
+                    prior_joint_covariance=query_cov,
                     innovation_covariance=innovation_cov,
                 )
             )

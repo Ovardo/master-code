@@ -24,15 +24,15 @@ def _ensure_ax(
     return fig, ax
 
 
-def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, **kwargs) -> Ellipse:
-    """Draw a 95% confidence ellipse for a 2D covariance matrix."""
-    chi2_95_2d: float = 2.447746830681
+def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, confidence: float = 0.95, **kwargs) -> Ellipse:
+    """Draw confidence ellipse for a 2D covariance matrix."""
+    ppf = chi2.ppf(confidence, df=2)
 
     eigvals, eigvecs = np.linalg.eigh(cov)
     eigvals = np.maximum(eigvals, 0.0)
     angle = np.arctan2(eigvecs[1, 0], eigvecs[0, 0])
-    width = np.sqrt(eigvals[0]) * 2 * chi2_95_2d * scale
-    height = np.sqrt(eigvals[1]) * 2 * chi2_95_2d * scale
+    width = np.sqrt(eigvals[0]) * ppf * scale
+    height = np.sqrt(eigvals[1]) * ppf * scale
 
     return Ellipse(xy=tuple(center), width=width, height=height, angle=np.degrees(angle), **kwargs)
 
@@ -578,8 +578,6 @@ def nearest_indices(query_times: np.ndarray, reference_times: np.ndarray) -> np.
     return np.where(left_dt <= right_dt, left_indices, right_indices)
 
 
-
-
 def plot_association(
     diagnostics: dict[str, np.ndarray],
     show_covariances: bool = True,
@@ -592,14 +590,21 @@ def plot_association(
     
     scan_step = int(diagnostics.get("scan_step")[0])
     
-    pose      = diagnostics.get("pose")
-    z         = diagnostics.get("measurements")
+    pose      = np.asarray(diagnostics.get("pose"), dtype=float)
+    z         = np.asarray(diagnostics.get("measurements"), dtype=float)
     z_pred    = diagnostics.get("predicted_measurements")
     assoc     = diagnostics.get("association")
     local_lms = diagnostics.get("local_landmarks")
     S         = diagnostics.get("innovation_covariance")
     
-    z_world = pose[:2] + z[:, 0] * np.column_stack((np.cos(z[:, 1]), np.sin(z[:, 1]))) @ rotmat2(pose[2]).T
+    if pose.shape != (3,):
+        raise ValueError(f"Expected pose with shape (3,), got {pose.shape}")
+    if z.ndim != 2 or z.shape[1] != 2:
+        raise ValueError(f"Expected measurements with shape (N, 2), got {z.shape}")
+
+    directions = np.column_stack((np.cos(z[:, 1]), np.sin(z[:, 1])))  # (N, 2)
+    local_points = z[:, 0, None] * directions  # (N, 1) * (N, 2) -> (N, 2)
+    z_world = pose[None, :2] + local_points @ rotmat2(pose[2]).T
     z_deg = z.copy()
     z_pred_deg = z_pred.copy()
     

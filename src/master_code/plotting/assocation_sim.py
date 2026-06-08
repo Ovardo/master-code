@@ -7,6 +7,7 @@ from shapely import geometry as sg
 from shapely.ops import unary_union
 
 from master_code.logger import SlamLogger
+from master_code.config import SlamConfig
 from master_code.plotting.plotting_funcs import confidence_ellipse_2d, plot_association
 from master_code.utils import rotmat2
 from master_code.plotting.thesis_style import apply_thesis_style
@@ -79,16 +80,17 @@ def plot_pose_covariance_in_body_frame(
         ax.plot(boundary[:, 0], boundary[:, 1], **kwargs)
 
 
-run = Path('/Users/ovar/Documents/Master/master_code/runs/sim/20260606_231621')
+
+# run = Path('/Users/ovar/Documents/Master/master_code/runs/sim/20260607_225558') # 357 (normal)
 # run = Path('/Users/ovar/Documents/Master/master_code/runs/sim/20260607_182625') # 228, 229, 230
-step = 357
-SCALE = 4.0
+run = Path('/Users/ovar/Documents/Master/master_code/runs/real/20260607_120820_all') # real
+step = 5194
+SCALE = 1.0
+RANGE = 50.0  
 
 apply_thesis_style()
 
-logger = SlamLogger(run)
-cfg = logger.
-
+cfg = SlamConfig.load(run / "config.yaml")
 diag = SlamLogger.load_association_diagnostics(run, step)
 
 fig, axes = plt.subplots(1,2, figsize=(9, 4.5), tight_layout=True)
@@ -123,7 +125,7 @@ for j, pred in enumerate(z_pred):
     cov_rb = cov_S[2*j : 2*j+2, 2*j : 2*j+2]
     cov_plot = range_bearing_to_plot @ cov_rb @ range_bearing_to_plot.T
     center = np.array([np.rad2deg(pred[1]), pred[0]])
-    axes[1].add_patch(confidence_ellipse_2d(center, cov_plot, fc="none", ec="tomato", confidence=0.99, alpha=1, lw=1, zorder=2))
+    axes[1].add_patch(confidence_ellipse_2d(center, cov_plot, fc="none", ec="tomato", confidence=cfg.association.alpha_individual, alpha=1, lw=1, zorder=2))
 
 for measurement, predicted_index in zip(z, assoc):
     if predicted_index < 0 or predicted_index >= len(z_pred):
@@ -206,8 +208,8 @@ axes[0].scatter(z_pred_y, z_pred_x, c="tomato", s=1, label="Predicted")
 axes[0].set_aspect("equal")
 axes[0].set_xlabel("y [m]")
 axes[0].set_ylabel("x [m]")
-axes[0].set_xlim(90, -90)
-axes[0].set_ylim(-90, 90)
+axes[0].set_xlim(RANGE, -RANGE)
+axes[0].set_ylim(-RANGE, RANGE)
 axes[0].set_title("Body space")
 axes[0].patch.set_alpha(0)
 
@@ -219,7 +221,7 @@ axp.set_theta_zero_location("N")
 axp.set_theta_direction(1)
 theta_degrees = np.arange(-180, 180, 30)
 axp.set_thetagrids(theta_degrees % 360, labels=[f"{theta}°" for theta in theta_degrees])
-axp.set_rlim(0, 90)
+axp.set_rlim(0, RANGE)
 axp.patch.set_alpha(0)
 axp.tick_params(axis="both", labelbottom=False, labelleft=False)
 axp.set_zorder(-5)
@@ -227,108 +229,108 @@ axp.grid(zorder=-5)
 
 fig.savefig(FIGURES_ROOT / f"sim_association_step_{step}.pdf", dpi=200, bbox_inches="tight")
 
-# # One-off thesis figure comparing consecutive scans in measurement space.
-# comparison_steps = [227, 228, 229]
-# comparison_fig, comparison_axes = plt.subplots(
-#     1,
-#     len(comparison_steps),
-#     figsize=(12, 4),
-#     sharex=True,
-#     sharey=True,
-#     tight_layout=True,
-# )
+# One-off thesis figure comparing consecutive scans in measurement space.
+comparison_steps = [227, 228, 229]
+comparison_fig, comparison_axes = plt.subplots(
+    1,
+    len(comparison_steps),
+    figsize=(12, 4),
+    sharex=True,
+    sharey=True,
+    tight_layout=True,
+)
 
-# for panel_index, (comparison_step, ax) in enumerate(zip(comparison_steps, comparison_axes)):
-#     comparison_diag = SlamLogger.load_association_diagnostics(run, comparison_step)
-#     comparison_z = comparison_diag["measurements"]
-#     comparison_z_pred = comparison_diag["predicted_measurements"]
-#     comparison_assoc = comparison_diag["association"]
-#     comparison_cov_S = comparison_diag["innovation_covariance"]
+for panel_index, (comparison_step, ax) in enumerate(zip(comparison_steps, comparison_axes)):
+    comparison_diag = SlamLogger.load_association_diagnostics(run, comparison_step)
+    comparison_z = comparison_diag["measurements"]
+    comparison_z_pred = comparison_diag["predicted_measurements"]
+    comparison_assoc = comparison_diag["association"]
+    comparison_cov_S = comparison_diag["innovation_covariance"]
 
-#     for j, predicted in enumerate(comparison_z_pred):
-#         cov_rb = comparison_cov_S[2*j : 2*j+2, 2*j : 2*j+2]
-#         cov_plot = range_bearing_to_plot @ cov_rb @ range_bearing_to_plot.T
-#         center = np.array([np.rad2deg(predicted[1]), predicted[0]])
-#         ax.add_patch(
-#             confidence_ellipse_2d(
-#                 center,
-#                 cov_plot,
-#                 fc="none",
-#                 ec="tomato",
-#                 confidence=0.99,
-#                 alpha=1,
-#                 lw=1,
-#                 zorder=2,
-#             )
-#         )
+    for j, predicted in enumerate(comparison_z_pred):
+        cov_rb = comparison_cov_S[2*j : 2*j+2, 2*j : 2*j+2]
+        cov_plot = range_bearing_to_plot @ cov_rb @ range_bearing_to_plot.T
+        center = np.array([np.rad2deg(predicted[1]), predicted[0]])
+        ax.add_patch(
+            confidence_ellipse_2d(
+                center,
+                cov_plot,
+                fc="none",
+                ec="tomato",
+                confidence=cfg.association.alpha_individual,
+                alpha=1,
+                lw=1,
+                zorder=2,
+            )
+        )
 
-#     for measurement, predicted_index in zip(comparison_z, comparison_assoc):
-#         if predicted_index < 0 or predicted_index >= len(comparison_z_pred):
-#             continue
-#         predicted = comparison_z_pred[predicted_index]
-#         ax.plot(
-#             np.rad2deg([measurement[1], predicted[1]]),
-#             [measurement[0], predicted[0]],
-#             color="green",
-#             lw=0.8,
-#             alpha=0.8,
-#             zorder=3,
-#         )
+    for measurement, predicted_index in zip(comparison_z, comparison_assoc):
+        if predicted_index < 0 or predicted_index >= len(comparison_z_pred):
+            continue
+        predicted = comparison_z_pred[predicted_index]
+        ax.plot(
+            np.rad2deg([measurement[1], predicted[1]]),
+            [measurement[0], predicted[0]],
+            color="green",
+            lw=0.8,
+            alpha=0.8,
+            zorder=3,
+        )
 
-#     ax.scatter(
-#         np.rad2deg(comparison_z[:, 1]),
-#         comparison_z[:, 0],
-#         c="steelblue",
-#         s=30,
-#         lw=0.8,
-#         marker="x",
-#         label="Measurement",
-#         zorder=4,
-#     )
-#     ax.scatter(
-#         np.rad2deg(comparison_z_pred[:, 1]),
-#         comparison_z_pred[:, 0],
-#         c="tomato",
-#         s=3,
-#         label="Predicted",
-#         zorder=5,
-#     )
-#     ax.set_xlabel("bearing [deg]")
-#     if panel_index == 0:
-#         ax.set_ylabel("range [m]")
-#     ax.set_xlim(120, -120)
-#     ax.set_ylim(0, 90)
-#     ax.set_xticks(np.arange(-120, 121, 30))
-#     ax.set_yticks(np.arange(0, 91, 10))
-#     ax.grid(True, linewidth=0.5, alpha=0.5)
-#     ax.set_title(f"Step {comparison_step}")
+    ax.scatter(
+        np.rad2deg(comparison_z[:, 1]),
+        comparison_z[:, 0],
+        c="steelblue",
+        s=30,
+        lw=0.8,
+        marker="x",
+        label="Measurement",
+        zorder=4,
+    )
+    ax.scatter(
+        np.rad2deg(comparison_z_pred[:, 1]),
+        comparison_z_pred[:, 0],
+        c="tomato",
+        s=3,
+        label="Predicted",
+        zorder=5,
+    )
+    ax.set_xlabel("bearing [deg]")
+    if panel_index == 0:
+        ax.set_ylabel("range [m]")
+    ax.set_xlim(120, -120)
+    ax.set_ylim(0, 90)
+    ax.set_xticks(np.arange(-120, 121, 30))
+    ax.set_yticks(np.arange(0, 91, 10))
+    ax.grid(True, linewidth=0.5, alpha=0.5)
+    ax.set_title(f"Step {comparison_step}")
 
-#     # Highlight the unassociated measurement near (bearing -70 deg, range 70 m).
-#     if comparison_step == 228:
-#         bearings_deg = np.rad2deg(comparison_z[:, 1])
-#         ranges = comparison_z[:, 0]
-#         unassociated = np.where(comparison_assoc < 0)[0]
-#         target = unassociated[
-#             np.argmin(
-#                 (bearings_deg[unassociated] + 70.0) ** 2
-#                 + (ranges[unassociated] - 70.0) ** 2
-#             )
-#         ]
-#         ax.annotate(
-#             "Unassociated\nmeasurement",
-#             xy=(bearings_deg[target], ranges[target]),
-#             xytext=(-10.0, 50.0),
-#             textcoords="data",
-#             ha="center",
-#             va="center",
-#             fontsize=8,
-#             arrowprops=dict(arrowstyle="->", color="black", lw=1.0),
-#         )
+    # Highlight the unassociated measurement near (bearing -70 deg, range 70 m).
+    if comparison_step == 228:
+        bearings_deg = np.rad2deg(comparison_z[:, 1])
+        ranges = comparison_z[:, 0]
+        unassociated = np.where(comparison_assoc < 0)[0]
+        target = unassociated[
+            np.argmin(
+                (bearings_deg[unassociated] + 70.0) ** 2
+                + (ranges[unassociated] - 70.0) ** 2
+            )
+        ]
+        ax.annotate(
+            "Unassociated\nmeasurement",
+            xy=(bearings_deg[target], ranges[target]),
+            xytext=(-55.0, 55.0),
+            textcoords="data",
+            ha="center",
+            va="center",
+            fontsize=8,
+            arrowprops=dict(arrowstyle="->", color="black", lw=1.0),
+        )
 
-# comparison_fig.savefig(
-#     FIGURES_ROOT / "sim_association_measurement_steps_227_229.pdf",
-#     dpi=200,
-#     bbox_inches="tight",
-# )
+comparison_fig.savefig(
+    FIGURES_ROOT / "sim_association_measurement_steps_227_229.pdf",
+    dpi=200,
+    bbox_inches="tight",
+)
 
 plt.show()

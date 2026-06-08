@@ -217,7 +217,7 @@ def plot_associations(
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
     # ax.set_title("Reconstructed ground-truth associations")
-    ax.legend(loc="best", fontsize=8)
+    # ax.legend(loc="best", fontsize=8)
     ax.grid(alpha=0.3)
     return fig, ax
 

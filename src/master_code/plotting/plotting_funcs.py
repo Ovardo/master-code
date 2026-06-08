@@ -24,17 +24,18 @@ def _ensure_ax(
     return fig, ax
 
 
-def confidence_ellipse_2d(center: np.ndarray, cov: np.ndarray, scale: float = 1.0, confidence: float = 0.95, **kwargs) -> Ellipse:
+def confidence_ellipse_2d(center, cov, scale=1.0, confidence=0.95, **kwargs):
     """Draw confidence ellipse for a 2D covariance matrix."""
-    ppf = chi2.ppf(confidence, df=2)
+    radius = np.sqrt(chi2.ppf(confidence, df=2))
 
     eigvals, eigvecs = np.linalg.eigh(cov)
     eigvals = np.maximum(eigvals, 0.0)
     angle = np.arctan2(eigvecs[1, 0], eigvecs[0, 0])
-    width = np.sqrt(eigvals[0]) * ppf * scale
-    height = np.sqrt(eigvals[1]) * ppf * scale
+    width = 2 * np.sqrt(eigvals[0]) * radius * scale
+    height = 2 * np.sqrt(eigvals[1]) * radius * scale
 
     return Ellipse(xy=tuple(center), width=width, height=height, angle=np.degrees(angle), **kwargs)
+
 
 def draw_pose_covariances(ax, poses: np.ndarray, poses_cov: np.ndarray, cov_stride: int = 10, **kwargs) -> None:
     R_W_B = rotmat2(poses[:, 2])
@@ -219,9 +220,9 @@ def plot_landmarks_and_timing(
 
     fig, axes = _ensure_ax(axes, figsize=(6, 6), nrows=3, ncols=1, sharex=True)
 
-    axes[0].plot(steps, t_cov, lw=0.8, color="tab:blue", label="Covariance recovery time")
-    axes[0].set_ylabel("Time (s)")
-    # axes[0].set_yscale("log")
+    axes[0].plot(steps, t_cov*1000, lw=0.8, color="tab:blue", label="Covariance recovery time")
+    axes[0].set_ylabel("Time (ms)")
+    axes[0].set_yscale("log")
     axes[0].grid(True, which="both", axis="both", lw=0.4)
     axes[0].legend(loc="upper left")
     axes[0].tick_params(axis="x", which="both", labelbottom=False)
@@ -251,21 +252,57 @@ def plot_timing_vs_landmarks(
 
     t_cov_ms = 1000.0 * t_cov
     t_support_ms = 1000.0 * t_cov
-    
+
     rho_support, _ = spearmanr(n_support, t_support_ms)
     rho_local, _ = spearmanr(n_local, t_cov_ms)
 
-    axes[0].scatter(n_local, t_cov_ms, alpha=0.4, s=12, color="steelblue")
-    axes[0].set_xlabel("# In-view landmarks")
-    axes[0].set_ylabel("Cov recovery time (ms)")
-    axes[0].set_title("Spearman rho: " + r"$\rho$" + f" = {rho_local:.2f}")
-    axes[0].grid(True, lw=0.4)
+    def plot_panel(axis, x, y, xlabel, rho):
+        valid = np.isfinite(x) & np.isfinite(y)
+        x_valid = x[valid]
+        y_valid = y[valid]
+        x_values = np.unique(x_valid)
 
-    axes[1].scatter(n_support, t_support_ms, alpha=0.4, s=12, color="steelblue")
-    axes[1].set_xlabel("# Support cliques")
-    axes[1].set_ylabel("Cov recovery time (ms)")
-    axes[1].set_title("Spearman rho: " + r"$\rho$" + f" = {rho_support:.2f}")
-    axes[1].grid(True, lw=0.4)
+        axis.scatter(
+            x_valid,
+            y_valid,
+            alpha=0.2,
+            s=12,
+            color="steelblue",
+            label="Samples",
+            zorder=1,
+        )
+        if x_values.size:
+            quartiles = np.array(
+                [np.quantile(y_valid[x_valid == value], [0.25, 0.5, 0.75]) for value in x_values]
+            )
+            axis.fill_between(
+                x_values,
+                quartiles[:, 0],
+                quartiles[:, 2],
+                color="darkorange",
+                alpha=0.25,
+                linewidth=0,
+                label="IQR",
+                zorder=2,
+            )
+            axis.plot(
+                x_values,
+                quartiles[:, 1],
+                color="darkorange",
+                lw=2,
+                marker="o",
+                markersize=3,
+                label="Median",
+                zorder=3,
+            )
+        axis.set_xlabel(xlabel)
+        axis.set_ylabel("Cov recovery time (ms)")
+        axis.set_title("Spearman rho: " + r"$\rho$" + f" = {rho:.2f}")
+        axis.grid(True, lw=0.4)
+        axis.legend(fontsize=8)
+
+    plot_panel(axes[0], n_local, t_cov_ms, "# In-view landmarks", rho_local)
+    plot_panel(axes[1], n_support, t_support_ms, "# Support cliques", rho_support)
 
     return fig, axes
 

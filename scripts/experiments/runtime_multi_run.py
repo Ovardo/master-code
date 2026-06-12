@@ -3,7 +3,7 @@
 The covariance-recovery step has random wall-clock spikes that vary from run to
 run.  Because the simulated dataset and the iSAM2 path are deterministic, the
 *algorithm* is identical every run -- only the measured timing fluctuates.  So
-running the same ``sim_default.yaml`` config N times and taking the per-step median
+running the same ``default_sim.yaml`` config N times and taking the per-step median
 across runs cancels the measurement noise while keeping the real timing
 structure, giving a fair, spike-robust picture for comparison.
 
@@ -42,12 +42,12 @@ EXPERIMENT_NAME = "runtime_multi_run"
 DATASETS = {
     "sim": {
         "run_fn": run_sim,
-        "config": "configs/sim_default.yaml",
+        "config": "configs/default_sim.yaml",
         "steps": 1000,
     },
     "real": {
         "run_fn": run_real,
-        "config": "configs/real_default.yaml",
+        "config": "configs/default_real.yaml",
         "steps": 7300,
     },
 }

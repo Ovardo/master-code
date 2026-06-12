@@ -1,12 +1,12 @@
 from datetime import datetime
+
 from master_code.config import SlamConfig
 from master_code.paths import RUNS_ROOT
 from master_code.run_real import run_real
 
 
-
 def main() -> None:
-    config = SlamConfig.load("configs/real_default.yaml")
+    config = SlamConfig.load("configs/default_real.yaml")
     
     run_name = "VP_BENCHMARKING"
     run_covariance_method = 'OLD'

@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/real_default.yaml"),
+        default=Path("configs/default_real.yaml"),
     )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--steps", type=int, default=7300)

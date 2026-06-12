@@ -34,12 +34,12 @@ Both commands accept explicit paths and run options:
 
 ```sh
 uv run run_real \
-  --config configs/real_default.yaml \
+  --config configs/default_real.yaml \
   --steps 7300 \
   --output-dir runs/real/example
 
 uv run run_sim \
-  --config configs/sim_default.yaml \
+  --config configs/default_sim.yaml \
   --steps 1000 \
   --output-dir runs/sim/example
 ```

@@ -6,7 +6,7 @@ from master_code.config import NoiseConfig, SlamConfig
 
 
 def test_load_root_config() -> None:
-    config = SlamConfig.load(Path("configs/sim_default.yaml"))
+    config = SlamConfig.load(Path("configs/default_sim.yaml"))
 
     assert config.association.method == "jcbb"
     assert config.tentative.M == 1

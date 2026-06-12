@@ -8,7 +8,7 @@ from master_code.loaders.simulated import SimulatedDataLoader
 
 def test_simulated_loader_produces_slam_input() -> None:
     loader = SimulatedDataLoader(Path("data/simulated/simulatedSLAM.mat"))
-    config = SlamConfig.load(Path("configs/sim_default.yaml"))
+    config = SlamConfig.load(Path("configs/default_sim.yaml"))
 
     first_step = next(loader.iterate_slam(config, max_steps=1))
 

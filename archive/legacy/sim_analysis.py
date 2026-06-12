@@ -28,14 +28,13 @@ from scipy.stats import chi2
 
 from master_code.config import SlamConfig
 from master_code.loaders.simulated import SimulatedDataLoader
-from master_code.utils import ssa
 from master_code.paths import FIGURES_ROOT
-
+from master_code.utils import ssa
 
 # --- configuration ----------------------------------------------------------
 # Measurement noise used to weight the range/bearing residuals. Defaults to the
 # values from the simulated SLAM config so the chi-square gate is meaningful.
-_SIM_NOISE = SlamConfig.load("configs/sim_default.yaml").noise
+_SIM_NOISE = SlamConfig.load("configs/default_sim.yaml").noise
 SIGMA_RANGE: float = _SIM_NOISE.sigma_range            # [m]
 SIGMA_BEARING_RAD: float = _SIM_NOISE.sigma_bearing_rad  # [rad]
 

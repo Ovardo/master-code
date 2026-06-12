@@ -1,5 +1,6 @@
 
 from datetime import datetime
+
 from master_code.config import SlamConfig
 from master_code.paths import RUNS_ROOT
 from master_code.run_real import run_real
@@ -9,7 +10,7 @@ def main() -> None:
     experiment_name = "M_vs_N"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    config = SlamConfig.load("configs/real_default.yaml")
+    config = SlamConfig.load("configs/default_real.yaml")
     
     runs = [
         {

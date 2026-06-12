@@ -18,7 +18,6 @@ from master_code.logger import AssociationDiagnostics, SlamLogger, StepDiagnosti
 from master_code.utils import pose2_to_array, reorder_covariance_naive
 
 
-
 @dataclass(slots=True)
 class SlamStepInput:
     """Data class representing a unified input for one SLAM step, regardless of the data source."""
@@ -229,6 +228,25 @@ def run_slam(
         local_predicted_measurements = np.asarray(local_predicted_measurements, dtype=float).reshape(-1, 2)
 
         # ======= Calculate Innovation Covariance ========
+
+        # Recover joint marginal covariance from the Bayes tree.
+        t0 = time.perf_counter()
+        cov_query = [pose_key] + local_landmarks_keys
+        
+        new_cov = True
+        if new_cov: # Local Steiner Tree marginal covariance extraction
+            P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
+        else: # Global constrained multifrontal elimination 
+            gfg = slam.isam2.getFactorsUnsafe().linearize(slam.isam2.getLinearizationPoint())
+            gfg_query = gfg.marginal(cov_query)
+            hessian, _ = gfg_query.hessian()
+            P = np.linalg.inv(hessian)
+
+        P = reorder_covariance_naive(P) # needed as gtsam return sorted cov-matrix 
+
+        diagnostics.duration_covariance_extraction = time.perf_counter() - t0
+        # diagnostics.support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # Need costum GTSAM build (only for diagnostics)
+
         n = len(local_landmarks_keys)
 
         # Form joint measurement noise covariance and Jacobian.
@@ -237,29 +255,6 @@ def run_slam(
         for i in range(n):
             H[2 * i:2 * i + 2, 0:3] = local_jacobians_pose[i]
             H[2 * i:2 * i + 2, 3 + 2 * i:3 + 2 * i + 2] = local_jacobians_landmarks[i]
-
-        # Recover joint marginal covariance from the Bayes tree.
-        t0 = time.perf_counter()
-        cov_query = [pose_key] + local_landmarks_keys
-        # P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
-        t0_ = time.perf_counter()
-        # marginals = gtsam.Marginals(slam.isam2.getFactorsUnsafe(), slam.isam2.getLinearizationPoint() )
-        # marginals = gtsam.Marginals(slam.isam2.getFactorsUnsafe(), slam.isam2.calculateEstimate())
-        # P = marginals.jointMarginalCovariance(cov_query).fullMatrix()
-        gfg = slam.isam2.getFactorsUnsafe().linearize(slam.isam2.getLinearizationPoint())
-        gfg_query = gfg.marginal(cov_query)
-        hessian, _ = gfg_query.hessian()
-        P = np.linalg.inv(hessian)
-        diagnostics.duration_marginal_calculation = time.perf_counter() - t0_
-        P = reorder_covariance_naive(P)
-
-        # TEMP: keep the latest step's recovered joint covariance and key ordering so
-        # the final one can be persisted after the loop.
-        final_joint_covariance = P
-
-        diagnostics.duration_covariance_extraction = time.perf_counter() - t0
-        # diagnostics.support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
-
 
         # Innovation covariance for local predicted measurements.
         S = H @ P @ H.T + R

@@ -42,6 +42,11 @@ htmlcov/
 .claude/settings.local.json
 
 # Generated SLAM outputs
-/runs/
+/runs/*
+!/runs/.gitkeep
 /videos/*
 !/videos/.gitkeep
+
+# Misc
+TODO.md
+AGENTS.md

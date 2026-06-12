@@ -5,13 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "graphviz>=0.21",
+    "gtsam-develop>=4.3a1.dev202605270118",
     "matplotlib>=3.10.9",
     "numpy>=2.4.6",
     "omegaconf>=2.3.0",
     "pip>=26.1.1",
     "scipy>=1.17.1",
-    "shapely>=2.1.2",
     "tqdm>=4.67.3",
 ]
 

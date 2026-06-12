@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
+from omegaconf import OmegaConf
 
 
 @dataclass
@@ -33,6 +37,7 @@ class NoiseConfig:
         sigma_init_pose_y (float): Standard deviation of initial pose uncertainty in y [m].
         sigma_init_pose_yaw_deg (float): Standard deviation of initial pose uncertainty in heading [deg].
     """
+
     sigma_velocity: float = 0.1
     sigma_steer_deg: float = 0.5
 
@@ -72,55 +77,63 @@ class NoiseConfig:
     @property
     def control_input_cov_matrix(self) -> np.ndarray:
         """Return diagonal covariance matrix of raw odometry input noise in [velocity, steering]."""
-        return np.diag([
-            self.sigma_velocity ** 2,
-            self.sigma_steer_rad ** 2,
-        ])
+        return np.diag(
+            [
+                self.sigma_velocity**2,
+                self.sigma_steer_rad**2,
+            ]
+        )
 
     @property
     def odom_cov_matrix(self) -> np.ndarray:
         """Return diagonal covariance matrix of additive odometry output noise in [x, y, yaw]."""
-        return np.diag([
-            self.sigma_odom_x ** 2,
-            self.sigma_odom_y ** 2,
-            self.sigma_odom_yaw_rad ** 2,
-        ])
+        return np.diag(
+            [
+                self.sigma_odom_x**2,
+                self.sigma_odom_y**2,
+                self.sigma_odom_yaw_rad**2,
+            ]
+        )
 
     @property
     def range_bearing_cov_matrix(self) -> np.ndarray:
         """Return diagonal landmark observation covariance matrix in order [range, bearing]."""
-        return np.diag([
-            self.sigma_range ** 2,
-            self.sigma_bearing_rad ** 2,
-        ])
+        return np.diag(
+            [
+                self.sigma_range**2,
+                self.sigma_bearing_rad**2,
+            ]
+        )
 
     @property
     def init_pose_cov_matrix(self) -> np.ndarray:
         """Return diagonal initial pose covariance matrix in [x, y, yaw]."""
-        return np.diag([
-            self.sigma_init_pose_x ** 2,
-            self.sigma_init_pose_y ** 2,
-            self.sigma_init_pose_yaw_rad ** 2,
-        ])
+        return np.diag(
+            [
+                self.sigma_init_pose_x**2,
+                self.sigma_init_pose_y**2,
+                self.sigma_init_pose_yaw_rad**2,
+            ]
+        )
 
 
-      
 @dataclass
 class TentativeLandmarkManagerConfig:
     """Configuration for landmark management in SLAM.
-    
+
     Attributes:
         M (int): Hits needed to confirm a landmark.
         N (int): Max lifetime (in steps) of tentative landmark.
-        gate (float): Euclidean distance threshold for associating unassociated 
-            measurements to existing tentative landmarks. Quick fix to handle 
+        gate (float): Euclidean distance threshold for associating unassociated
+            measurements to existing tentative landmarks. Quick fix to handle
             dynamic objects.
     """
+
     M: int = 3
     N: int = 4
     gate: float = 0.1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.M <= 0:
             raise ValueError(f"M must be positive, got {self.M}")
         if self.N <= 0:
@@ -134,19 +147,24 @@ class TentativeLandmarkManagerConfig:
 @dataclass
 class SensorConfig:
     """Sensor configuration parameters.
-    
+
     Attributes:
         range_local (float): Local map filtering range in meters. Must be positive.
-        bearing_local_deg (float): Local map filtering bearing half-width in degrees. Must be in (0, 180].
+        bearing_local_deg (float): Local map filtering bearing half-width in
+            degrees. Must be in (0, 180].
     """
+
     range_local: float = 50.0
     bearing_local_deg: float = 125.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.range_local <= 0:
             raise ValueError(f"range_local must be positive, got {self.range_local}")
         if not (0 < self.bearing_local_deg <= 180):
-            raise ValueError(f"bearing_local_deg must be in (0, 180], got {self.bearing_local_deg}")
+            raise ValueError(
+                "bearing_local_deg must be in (0, 180], "
+                f"got {self.bearing_local_deg}"
+            )
 
     @property
     def bearing_local_rad(self) -> float:
@@ -156,24 +174,33 @@ class SensorConfig:
 @dataclass
 class AssociationConfig:
     """Data association configuration for landmark matching.
-    
+
     Attributes:
-        method (str): Association method. Options: "gt" (only for sim), "jcbb", "ml", "nn", "cnn".
+        method (str): Association method.
         alpha_individual (float): Confidence level for individual compatibility test.
         alpha_joint (float): Confidence level for joint compatibility test.
     """
+
     method: str = "jcbb"
     alpha_individual: float = 0.999
     alpha_joint: float = 0.9999
 
-    def __post_init__(self):
-        methods_options = ["jcbb", "ml"] # TODO: include "gt" and "nn"
+    def __post_init__(self) -> None:
+        methods_options = ["jcbb", "ml"]  # TODO: include "gt" and "nn"
         if self.method not in methods_options:
-            raise ValueError(f"Invalid association_type {self.method}, must be one of {methods_options}")
+            raise ValueError(
+                f"Invalid association_type {self.method}, "
+                f"must be one of {methods_options}"
+            )
         if not (0 < self.alpha_individual < 1):
-            raise ValueError(f"alpha_individual must be in (0, 1), got {self.alpha_individual}")
+            raise ValueError(
+                "alpha_individual must be in (0, 1), "
+                f"got {self.alpha_individual}"
+            )
         if not (0 < self.alpha_joint < 1):
-            raise ValueError(f"alpha_joint must be in (0, 1), got {self.alpha_joint}")
+            raise ValueError(
+                f"alpha_joint must be in (0, 1), got {self.alpha_joint}"
+            )
 
 
 @dataclass
@@ -189,12 +216,51 @@ class LoggingConfig:
 
     log_error: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.association_stride <= 0:
-            raise ValueError(f"association_stride must be positive, got {self.association_stride}")
+            raise ValueError(
+                "association_stride must be positive, "
+                f"got {self.association_stride}"
+            )
         if any(step < 0 for step in self.association_steps):
             raise ValueError("association_steps must contain non-negative scan steps")
         if self.snapshot_stride <= 0:
-            raise ValueError(f"snapshot_stride must be positive, got {self.snapshot_stride}")
+            raise ValueError(
+                f"snapshot_stride must be positive, got {self.snapshot_stride}"
+            )
         if any(step < 0 for step in self.snapshot_steps):
             raise ValueError("snapshot_steps must contain non-negative scan steps")
+
+
+@dataclass
+class SlamConfig:
+    """Top-level configuration for a SLAM run."""
+
+    noise: NoiseConfig = field(default_factory=NoiseConfig)
+    sensor: SensorConfig = field(default_factory=SensorConfig)
+    tentative: TentativeLandmarkManagerConfig = field(
+        default_factory=TentativeLandmarkManagerConfig
+    )
+    association: AssociationConfig = field(default_factory=AssociationConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    @classmethod
+    def load(cls, filename: str | Path) -> SlamConfig:
+        path = Path(filename)
+        if not path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {path}")
+
+        config = OmegaConf.to_object(
+            OmegaConf.merge(OmegaConf.structured(cls), OmegaConf.load(path))
+        )
+        if not isinstance(config, cls):
+            raise TypeError(f"Expected {cls.__name__}, got {type(config).__name__}")
+
+        print(f"Loaded configuration from {path}")
+        return config
+
+    def save(self, filename: str | Path) -> None:
+        path = Path(filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(OmegaConf.structured(self), path)
+        print(f"Configuration saved to {path}")

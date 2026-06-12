@@ -35,7 +35,7 @@ from master_code.paths import FIGURES_ROOT
 # --- configuration ----------------------------------------------------------
 # Measurement noise used to weight the range/bearing residuals. Defaults to the
 # values from the simulated SLAM config so the chi-square gate is meaningful.
-_SIM_NOISE = SlamConfig.load("sim.yaml").noise
+_SIM_NOISE = SlamConfig.load("configs/sim_default.yaml").noise
 SIGMA_RANGE: float = _SIM_NOISE.sigma_range            # [m]
 SIGMA_BEARING_RAD: float = _SIM_NOISE.sigma_bearing_rad  # [rad]
 

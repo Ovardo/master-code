@@ -3,16 +3,16 @@
 The covariance-recovery step has random wall-clock spikes that vary from run to
 run.  Because the simulated dataset and the iSAM2 path are deterministic, the
 *algorithm* is identical every run -- only the measured timing fluctuates.  So
-running the same ``sim.yaml`` config N times and taking the per-step median
+running the same ``sim_default.yaml`` config N times and taking the per-step median
 across runs cancels the measurement noise while keeping the real timing
 structure, giving a fair, spike-robust picture for comparison.
 
 Usage::
 
-    python -m master_code.experiments.runtime_multi_run                       # sim, 10 x 1000
-    python -m master_code.experiments.runtime_multi_run --dataset real        # real, 10 x 7300
-    python -m master_code.experiments.runtime_multi_run --runs 2 --steps 100
-    python -m master_code.experiments.runtime_multi_run --reuse <dir>         # plot only
+    python scripts/experiments/runtime_multi_run.py
+    python scripts/experiments/runtime_multi_run.py --dataset real
+    python scripts/experiments/runtime_multi_run.py --runs 2 --steps 100
+    python scripts/experiments/runtime_multi_run.py --reuse <dir>
 """
 
 from __future__ import annotations
@@ -40,8 +40,16 @@ EXPERIMENT_NAME = "runtime_multi_run"
 
 # Per-dataset: SLAM entry point, config file, and default step count.
 DATASETS = {
-    "sim": {"run_fn": run_sim, "config": "sim.yaml", "steps": 1000},
-    "real": {"run_fn": run_real, "config": "real.yaml", "steps": 7300},
+    "sim": {
+        "run_fn": run_sim,
+        "config": "configs/sim_default.yaml",
+        "steps": 1000,
+    },
+    "real": {
+        "run_fn": run_real,
+        "config": "configs/real_default.yaml",
+        "steps": 7300,
+    },
 }
 
 # (steps.npz key, legend label, colour) -- order = cumulative stacking order.

@@ -1,6 +1,6 @@
 """Per-run runtime analysis of the Victoria Park benchmark (Global vs Steiner).
 
-``5_VP_run.py`` runs the same config five times per method so the random
+``vp_benchmark_run.py`` runs the same config five times per method so the random
 wall-clock spikes in the covariance-recovery step can be characterised.  This
 script uses a matched 5-run set (runs 1-5) for both methods and:
 
@@ -12,9 +12,9 @@ script uses a matched 5-run set (runs 1-5) for both methods and:
     per-step timing plot stacks the *mean* component (additive -> mean total) and
     overlays a mean-to-max-across-runs ribbon whose peak is the worst-case step.
 
-Run as a script path (the module name starts with a digit, so ``-m`` won't work)::
+Run from the repository root::
 
-    python src/master_code/experiments/5_VP_viz.py
+    python scripts/experiments/vp_benchmark_plot.py
 """
 
 from __future__ import annotations

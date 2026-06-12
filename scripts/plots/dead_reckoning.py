@@ -9,7 +9,6 @@ from master_code.preprocessing import relative_pose
 from master_code.plotter import plot_estimate
 
 import numpy as np
-import scienceplots
 
 # plt.style.use(['science'])
 

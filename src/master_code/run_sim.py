@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 from pathlib import Path
 
 from master_code.config import SlamConfig
 from master_code.loaders.simulated import SimulatedDataLoader
-from master_code.paths import RUNS_ROOT
 from master_code.slam import run_slam
 
 
@@ -27,19 +27,42 @@ def run_sim(
     )
 
 
-def main() -> None:
-    NUM_STEPS = 1000
-    OUTPUT_DIR = RUNS_ROOT / "sim" / datetime.now().strftime("%Y%m%d_%H%M%S")
-    CONFIG_NAME = "sim.yaml"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run SLAM on the simulated dataset.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/sim_default.yaml"),
+    )
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--steps", type=int, default=1000)
+    parser.add_argument(
+        "--no-show-plots",
+        action="store_true",
+        help="Do not display plots after the run.",
+    )
+    parser.add_argument(
+        "--no-save-plots",
+        action="store_true",
+        help="Do not save plots to the run directory.",
+    )
+    return parser.parse_args()
 
-    config = SlamConfig.load(CONFIG_NAME)
+
+def main() -> None:
+    args = parse_args()
+    output_dir = args.output_dir
+    if output_dir is None:
+        output_dir = Path("runs/sim") / datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    config = SlamConfig.load(args.config)
 
     run_sim(
         config=config,
-        output_dir=OUTPUT_DIR,
-        num_steps=NUM_STEPS,
-        show_plots=True,
-        save_plots=True,
+        output_dir=output_dir,
+        num_steps=args.steps,
+        show_plots=not args.no_show_plots,
+        save_plots=not args.no_save_plots,
     )
 
 

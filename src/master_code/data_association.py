@@ -1,5 +1,5 @@
 """
-JCBB logic implementation adapted from work by TODO
+JCBB logic implementation adapted from graded assignment II, TTK4250
 """
 
 from __future__ import annotations

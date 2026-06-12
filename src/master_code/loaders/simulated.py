@@ -1,11 +1,11 @@
 from collections.abc import Iterator
+from pathlib import Path
 
 import gtsam
 import numpy as np
 from scipy.io import loadmat
 
 from master_code.config import SlamConfig
-from master_code.paths import DATA_ROOT
 from master_code.slam import SlamStepInput
 
 
@@ -14,8 +14,10 @@ class SimulatedDataLoader:
 
     name = "sim"
 
-    def __init__(self):
-        data_file = DATA_ROOT / "simulated" / "simulatedSLAM.mat"
+    def __init__(
+        self,
+        data_file: Path = Path("data/simulated/simulatedSLAM.mat"),
+    ):
         raw_data = loadmat(str(data_file))
         
         self.measurements = [zk.T for zk in raw_data["z"].ravel()]

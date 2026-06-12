@@ -6,7 +6,7 @@ from master_code.run_real import run_real
 
 
 def main() -> None:
-    config = SlamConfig.load("real.yaml")
+    config = SlamConfig.load("configs/real_default.yaml")
     
     run_name = "VP_BENCHMARKING"
     run_covariance_method = 'OLD'

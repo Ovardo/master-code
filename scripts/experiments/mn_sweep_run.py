@@ -9,7 +9,7 @@ def main() -> None:
     experiment_name = "M_vs_N"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    config = SlamConfig.load("real.yaml")
+    config = SlamConfig.load("configs/real_default.yaml")
     
     runs = [
         {

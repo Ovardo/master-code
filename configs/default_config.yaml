@@ -24,3 +24,7 @@ logging:
   log_association_diagnostics: true
   association_stride: 200
   association_steps: []
+  log_snapshot: true
+  snapshot_stride: 200
+  snapshot_steps: []
+  log_error: false

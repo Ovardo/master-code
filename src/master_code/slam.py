@@ -82,8 +82,6 @@ class SlamState:
         }
 
 
-
-
 def run_slam(
     config: SlamConfig,
     dataset: SlamDataset,

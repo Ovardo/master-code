@@ -7,7 +7,7 @@ import numpy as np
 
 from master_code.loaders.simulated import SimulatedDataLoader
 from master_code.logger import SlamLogger
-from master_code.plotting.create_video import render_video
+from create_video import render_video
 
 
 DEFAULT_RUN_DIR = Path("runs/sim/20260603_130915_all")

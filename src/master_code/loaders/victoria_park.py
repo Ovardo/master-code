@@ -6,7 +6,6 @@ import numpy as np
 from scipy.io import loadmat
 
 from master_code.config import SlamConfig
-from master_code.paths import DATA_ROOT
 from master_code.preprocessing import extract_tree_measurements, preintegrate, relative_pose
 from master_code.slam import SlamStepInput
 
@@ -31,7 +30,7 @@ class VictoriaParkLoader:
 
     def __init__(self, data_folder: Path | None = None):
         if data_folder is None:
-            data_folder = DATA_ROOT / "victoria_park" / "raw"
+            data_folder = Path("data/victoria_park/raw")
 
         self._load_data(data_folder)
         self._prepare_odometry_intervals()

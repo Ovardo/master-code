@@ -1,7 +1,7 @@
 [project]
 name = "master-code"
 version = "0.1.0"
-description = "Add your description here"
+description = "Factor graph SLAM with JCBB data association"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,11 @@ dependencies = [
     "pip>=26.1.1",
     "scipy>=1.17.1",
     "tqdm>=4.67.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
 ]
 
 [project.scripts]

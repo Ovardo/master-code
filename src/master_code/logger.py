@@ -71,7 +71,6 @@ class StepDiagnostics:
     duration_association: float = 0.0
     duration_covariance_extraction: float = 0.0
     duration_local_landmark_extraction: float = 0.0
-    duration_marginal_calculation: float = 0.0
 
     def clear(self) -> None:
         """Reset all diagnostics to their default values."""

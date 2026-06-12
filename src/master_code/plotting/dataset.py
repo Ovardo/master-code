@@ -627,29 +627,29 @@ def main():
     odometry = data_loader.odometry
     gnss = data_loader.gnss
 
-    # plot_gnss(gnss)
+    plot_gnss(gnss)
     plot_sensor_timing(lidar, odometry, gnss, window_seconds=0.68)
-    # plot_raw_measurements(lidar, odometry, gnss)
+    plot_raw_measurements(lidar, odometry, gnss)
 
-    # fig = plot_raw_odometry(odometry)
-    # fig.set_size_inches(11.0, 4.0)  # width, height in inches
-    # fig.savefig(f"{FIGURES_ROOT}/odometry.pdf", bbox_inches="tight")
+    fig = plot_raw_odometry(odometry)
+    fig.set_size_inches(11.0, 4.0)  # width, height in inches
+    fig.savefig(f"{FIGURES_ROOT}/odometry.pdf", bbox_inches="tight")
 
-    # fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
-    # fig.set_size_inches(6.0, 5.5)  # width, height in inches
-    # fig.savefig(f"{FIGURES_ROOT}/gnss.pdf", bbox_inches="tight")
+    fig = plot_raw_gps(gnss, lidar_scans_times=lidar[:,0])
+    fig.set_size_inches(6.0, 5.5)  # width, height in inches
+    fig.savefig(f"{FIGURES_ROOT}/gnss.pdf", bbox_inches="tight")
     
-    # fig = plot_lidar_tree_detection_summary(lidar)
-    # fig.set_size_inches(11.0, 5.5)  # width, height in inches
-    # fig.savefig(f"{FIGURES_ROOT}/lidar.pdf", bbox_inches="tight")
+    fig = plot_lidar_tree_detection_summary(lidar)
+    fig.set_size_inches(11.0, 5.5)  # width, height in inches
+    fig.savefig(f"{FIGURES_ROOT}/lidar.pdf", bbox_inches="tight", dpi=620)
 
-    # outliers_idx = find_gnss_outliers(gnss)
-    # fig, ax = plt.subplots(figsize=(6, 6), constrained_layout=True)
-    # ax.scatter(gnss[:,1], gnss[:,2], s=10, color="steelblue", label="gnss")
-    # ax.scatter(gnss[outliers_idx,1], gnss[outliers_idx,2], s=10, color="red", label="gnss outliers")
-    # ax.legend()
-    # ax.grid(True, which="both", linewidth=0.4)
-    # fig.savefig(f"{FIGURES_ROOT}/gnss_outliers.pdf", bbox_inches="tight")
+    outliers_idx = find_gnss_outliers(gnss)
+    fig, ax = plt.subplots(figsize=(6, 6), constrained_layout=True)
+    ax.scatter(gnss[:,1], gnss[:,2], s=10, color="steelblue", label="gnss")
+    ax.scatter(gnss[outliers_idx,1], gnss[outliers_idx,2], s=10, color="red", label="gnss outliers")
+    ax.legend()
+    ax.grid(True, which="both", linewidth=0.4)
+    fig.savefig(f"{FIGURES_ROOT}/gnss_outliers.pdf", bbox_inches="tight")
     plt.show()
 
 if __name__ == "__main__":

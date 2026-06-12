@@ -83,22 +83,6 @@ class SlamState:
         }
 
 
-def _save_final_joint_covariance(
-    output_dir: Path,
-    covariance: np.ndarray,
-    keys: list[int],
-) -> None:
-    """TEMP: persist the recovered joint marginal covariance of the final step.
-
-    Saved to compare against the old covariance method. The block ordering of
-    `covariance` is [pose(3), lm_0(2), lm_1(2), ...] matching `keys`. The keys are
-    stored as raw GTSAM symbols (int64). Remove once the comparison is done.
-    """
-    np.savez(
-        output_dir / "final_joint_covariance.npz",
-        covariance=covariance,
-        keys=np.asarray(keys, dtype=np.int64),
-    )
 
 
 def run_slam(
@@ -152,7 +136,6 @@ def run_slam(
 
     # TEMP: holds the final step's recovered joint covariance and its key ordering.
     final_joint_covariance: np.ndarray | None = None
-    final_joint_covariance_keys: list[int] | None = None
 
     # ======= Add Prior Factor ========
     prior_mean = gtsam.Pose2(*dataset.initial_pose)
@@ -258,13 +241,24 @@ def run_slam(
         # Recover joint marginal covariance from the Bayes tree.
         t0 = time.perf_counter()
         cov_query = [pose_key] + local_landmarks_keys
-        P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
+        # P = slam.isam2.jointMarginalCovariance(cov_query).fullMatrix()
+        t0_ = time.perf_counter()
+        # marginals = gtsam.Marginals(slam.isam2.getFactorsUnsafe(), slam.isam2.getLinearizationPoint() )
         # marginals = gtsam.Marginals(slam.isam2.getFactorsUnsafe(), slam.isam2.calculateEstimate())
         # P = marginals.jointMarginalCovariance(cov_query).fullMatrix()
+        gfg = slam.isam2.getFactorsUnsafe().linearize(slam.isam2.getLinearizationPoint())
+        gfg_query = gfg.marginal(cov_query)
+        hessian, _ = gfg_query.hessian()
+        P = np.linalg.inv(hessian)
+        diagnostics.duration_marginal_calculation = time.perf_counter() - t0_
         P = reorder_covariance_naive(P)
 
+        # TEMP: keep the latest step's recovered joint covariance and key ordering so
+        # the final one can be persisted after the loop.
+        final_joint_covariance = P
+
         diagnostics.duration_covariance_extraction = time.perf_counter() - t0
-        support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
+        # diagnostics.support_size = slam.isam2.jointMarginalSupportCliqueCount(cov_query) # TODO: comment out
 
 
         # Innovation covariance for local predicted measurements.
@@ -348,7 +342,6 @@ def run_slam(
         diagnostics.num_local_landmarks = len(local_landmarks_keys)
         diagnostics.num_associated_measurement = int(np.sum(is_associated))
         diagnostics.num_unassociated_measurement = int(np.sum(~is_associated))
-        diagnostics.num_support_cliques = support_size # TODO: comment out
 
         diagnostics_steps.append(diagnostics)
 
@@ -375,7 +368,6 @@ def run_slam(
     # ======= Save Result to Output Directory ========
     total_time = time.perf_counter() - t_run_start
 
-    
     if diagnostics_steps:
         final_step = diagnostics_steps[-1].scan_step
         final_diagnostics = diagnostics_steps[-1]
@@ -384,11 +376,12 @@ def run_slam(
         final_diagnostics = StepDiagnostics(scan_step=0, num_landmarks=len(slam.landmark_keys))
 
     # ======= Analysis ========
-    # from master_code.analysis import compute_algebraic_connectivity
-    # algebraic_connectivity = compute_algebraic_connectivity(slam.isam2, slam.isam2.calculateEstimate())
-
     logger.save_snapshot(final_step, slam.get_snapshot(), final=True)
     logger.save_steps_diagnostics(diagnostics_steps)
+
+    # TEMP: persist the final step's recovered joint covariance for method comparison.
+    if final_joint_covariance is not None:
+        np.save(output_dir / "final_joint_covariance.npy", final_joint_covariance)
 
     logger.save_metadata(
         final_diagnostics,

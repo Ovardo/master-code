@@ -96,7 +96,7 @@ def inset_sim():
 
     ax.indicate_inset_zoom(axins, edgecolor="gray")
 
-    fig.savefig(FIGURES_ROOT / "sim_final_snapshot_zoom.pdf", dpi=200, bbox_inches="tight")
+    fig.savefig(FIGURES_ROOT / "sim_final_snapshot_zoom.pdf", dpi=400, bbox_inches="tight")
     plt.show()
 
 def inset_real():
@@ -139,7 +139,7 @@ def inset_real():
         alpha=0.4,                      # -> set to 1.0 once aligned
     )
 
-    fig.savefig(FIGURES_ROOT / "real_final_snapshot_zoom.pdf", dpi=200, bbox_inches="tight")
+    fig.savefig(FIGURES_ROOT / "real_final_snapshot_zoom.pdf", dpi=400, bbox_inches="tight")
     plt.show()
 
 def main() -> None:

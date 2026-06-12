@@ -39,6 +39,7 @@ class AssociationDiagnostics:
     local_landmark_keys: np.ndarray
     prior_joint_covariance: np.ndarray
     innovation_covariance: np.ndarray
+    
 
     def as_npz_dict(self) -> dict[str, np.ndarray]:
         return {
@@ -70,6 +71,7 @@ class StepDiagnostics:
     duration_association: float = 0.0
     duration_covariance_extraction: float = 0.0
     duration_local_landmark_extraction: float = 0.0
+    duration_marginal_calculation: float = 0.0
 
     def clear(self) -> None:
         """Reset all diagnostics to their default values."""
